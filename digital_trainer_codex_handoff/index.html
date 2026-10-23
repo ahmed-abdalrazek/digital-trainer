@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="عرض تفاعلي لمنصة المدرب الرقمي - بيانات تجريبية فقط" />
+  <title>المدرب الرقمي | منصة الإدارة</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/styles.css" />
+  <link rel="stylesheet" href="assets/theme.css" />
+  <link rel="stylesheet" href="assets/interaction.css" />
+</head>
+<body>
+  <div class="demo-ribbon">بيانات تجريبية — ليست بيانات تشغيل فعلية</div>
+  <div class="shell">
+    <aside class="sidebar" id="sidebar" aria-label="التنقل الرئيسي">
+      <div class="brand"><div class="brand-mark">م</div><div><strong>المدرب الرقمي</strong><small>منطقة الرياض</small></div></div>
+      <nav id="main-nav">
+        <p class="nav-label">الإدارة والمتابعة</p>
+        <button class="nav-item active" data-page="dashboard">▦ <span>لوحة المؤشرات</span></button>
+        <button class="nav-item" data-page="facilities">⌂ <span>الكليات والمنشآت</span></button>
+        <button class="nav-item" data-page="departments">⌘ <span>الأقسام</span></button>
+        <button class="nav-item" data-page="users">♙ <span>المستخدمون</span></button>
+        <button class="nav-item" data-page="roles">◫ <span>الأدوار والصلاحيات</span></button>
+        <p class="nav-label">التدريب والمحتوى</p>
+        <button class="nav-item" data-page="courses">▤ <span>المقررات والشعب</span></button>
+        <button class="nav-item" data-page="content">▣ <span>المحتوى والاعتماد</span></button>
+        <button class="nav-item" data-page="attendance">◷ <span>الحضور والتقدم</span></button>
+        <p class="nav-label">الحوكمة</p>
+        <button class="nav-item" data-page="reports">▥ <span>التقارير والمؤشرات</span></button>
+        <button class="nav-item" data-page="quality">✓ <span>الجودة وسجل التدقيق</span></button>
+        <button class="nav-item" data-page="settings">⚙ <span>الإعدادات</span></button>
+      </nav>
+      <div class="sidebar-foot"><span class="pulse"></span> بيئة العرض التجريبي</div>
+    </aside>
+    <main class="main">
+      <header class="topbar"><button class="menu" id="menu-btn" aria-label="فتح القائمة">☰</button><div class="global-search"><span>⌕</span><input id="global-search" placeholder="بحث سريع في بيانات العرض…" /></div><div class="top-actions"><label class="role-switcher" for="role-switcher"><span>وضع العرض</span><select id="role-switcher" aria-label="تبديل دور العرض التجريبي"><option>مدير إدارة المنطقة</option><option>نائب المحافظ للتدريب</option><option>مشرف الكليات التقنية</option><option>عميد المنشأة/الكلية</option><option>إدارة الجودة التدريبية</option><option>رئيس القسم/مشرف القسم</option><option>المدرب</option><option>المتدرب</option></select></label><button class="icon-btn" id="notify-btn" aria-label="التنبيهات">♧<b>3</b></button><button class="profile" id="profile-btn"><span class="avatar">ع</span><span><strong>أحمد العتيبي</strong><small id="active-role-label">مدير إدارة المنطقة</small></span><i>⌄</i></button></div></header>
+      <section id="app" class="page-area" aria-live="polite"></section>
+    </main>
+  </div>
+  <div id="modal-root"></div><div id="toast-root" aria-live="polite"></div>
+  <script src="assets/app.js"></script>
+  <script src="assets/saudi-map.js"></script>
+  <script src="assets/role-switcher.js"></script>
+  <script src="assets/student-platform.js"></script>
+  <script src="assets/quality-workspace.js"></script>
+  <script>
+    // Let the user finish typing; the app applies data filters on change/blur.
+    document.addEventListener('input', (event) => {
+      if (event.target.matches('[data-filter]')) event.stopImmediatePropagation();
+    }, true);
+  </script>
+</body>
+</html>
