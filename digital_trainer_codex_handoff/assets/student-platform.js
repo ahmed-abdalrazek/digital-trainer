@@ -234,39 +234,28 @@
     const request = ++speechRequest;
     synth.cancel();
     const statusEl = document.getElementById('trainer-speaking');
-    const arabicVoice = () => {
-      const voices = synth.getVoices();
-      return voices.find(voice => /^ar[-_]SA$/i.test(voice.lang)) || voices.find(voice => /^ar([_-]|$)/i.test(voice.lang));
-    };
-    const say = () => {
-      if (request !== speechRequest) return false;
-      const voice = arabicVoice();
-      if (!voice) return false;
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = voice.lang || 'ar-SA';
-      utterance.voice = voice;
-      utterance.rate = .92;
-      if (statusEl) statusEl.textContent = /^ar[-_]SA$/i.test(voice.lang) ? 'المدرب يتحدث بصوت عربي سعودي…' : 'المدرب يتحدث بصوت عربي…';
-      utterance.onend = () => { const el = document.getElementById('trainer-speaking'); if (el) el.textContent = 'جاهز للشرح بصوت عربي'; };
-      utterance.onerror = () => { const el = document.getElementById('trainer-speaking'); if (el) el.textContent = 'تعذر تشغيل الصوت العربي'; };
-      synth.speak(utterance);
-      return true;
-    };
-    if (say()) return;
-    if (statusEl) statusEl.textContent = 'جارٍ البحث عن صوت عربي على الجهاز…';
-    let finished = false;
-    const cleanup = () => { finished = true; synth.removeEventListener?.('voiceschanged', retry); };
-    const retry = () => { if (say()) cleanup(); };
-    synth.addEventListener?.('voiceschanged', retry);
-    window.setTimeout(() => {
-      if (finished) return;
-      cleanup();
-      if (request !== speechRequest) return;
-      if (!say()) {
-        if (statusEl) statusEl.textContent = 'لم يُعثر على صوت عربي في الجهاز';
-        toast('لا يوجد صوت عربي مثبت أو مفعّل في الجهاز. فعّل صوتًا عربيًا من إعدادات تحويل النص إلى كلام ثم أعد المحاولة.');
+    if (request !== speechRequest) return;
+    // Start synchronously in the click handler. Some mobile browsers block speech
+    // if it is deferred until the asynchronous `voiceschanged` event.
+    const voices = synth.getVoices();
+    const voice = voices.find(item => /^ar[-_]SA$/i.test(item.lang))
+      || voices.find(item => /^ar([_-]|$)/i.test(item.lang));
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = voice?.lang || 'ar-SA';
+    if (voice) utterance.voice = voice;
+    utterance.rate = .92;
+    if (statusEl) statusEl.textContent = voice && /^ar[-_]SA$/i.test(voice.lang)
+      ? 'المدرب يتحدث بصوت عربي سعودي…'
+      : 'المدرب يتحدث بالعربية…';
+    utterance.onend = () => { const el = document.getElementById('trainer-speaking'); if (el) el.textContent = 'جاهز للشرح بصوت عربي'; };
+    utterance.onerror = event => {
+      const el = document.getElementById('trainer-speaking');
+      if (el) el.textContent = 'تعذر تشغيل الصوت العربي';
+      if (event.error === 'voice-unavailable' || event.error === 'language-unavailable') {
+        toast('الجهاز لا يوفر صوتًا عربيًا للمتصفح. فعّل الصوت العربي من إعدادات الجهاز ثم أعد المحاولة.');
       }
-    }, 1600);
+    };
+    synth.speak(utterance);
   }
   function toast(message) {
     if (lastToast) lastToast.remove();
