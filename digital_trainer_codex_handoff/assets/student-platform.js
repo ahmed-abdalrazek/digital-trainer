@@ -224,7 +224,7 @@
       if (!drawing) return;
       const rect = canvas.getBoundingClientRect(), ctx = canvas.getContext('2d');
       ctx.lineTo(event.clientX - rect.left, event.clientY - rect.top);
-      ctx.strokeStyle = eraseMode ? '#0a211f' : '#e7bf73'; ctx.lineWidth = eraseMode ? 24 : 3; ctx.lineCap = 'round'; ctx.stroke();
+      ctx.strokeStyle = eraseMode ? '#0a211f' : '#43d8bd'; ctx.lineWidth = eraseMode ? 24 : 3; ctx.lineCap = 'round'; ctx.stroke();
     });
     ['pointerup', 'pointercancel', 'pointerleave'].forEach(name => canvas?.addEventListener(name, () => { drawing = false; }));
   }
