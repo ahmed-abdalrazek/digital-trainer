@@ -1,4 +1,4 @@
-// Personal trainee portal for the demo. All records and progress remain in memory.
+// Demo trainee portal: records stay in memory; the single Tutori lecture runs live.
 (() => {
   const roleSelector = document.getElementById('role-switcher');
   const appRoot = document.getElementById('app');
@@ -40,23 +40,11 @@
     ['الأحد · 11 صفر', 'الشبكات 101', 'حاضر', '100%'], ['الاثنين · 12 صفر', 'أساسيات البرمجة', 'حاضر', '100%'],
     ['الثلاثاء · 13 صفر', 'الأمن السيبراني', 'متأخر', '88%'], ['الأربعاء · 14 صفر', 'إدارة المشاريع', 'حاضر', '100%']
   ];
-  const lessonSteps = [
-    { title: '1. الفكرة الأساسية', sub: 'نتعرف على أدوار انتقال البيانات', text: 'أهلًا بك. لنتعرف إلى كيفية انتقال البيانات ببساطة. لدينا مُرسِل، ووسيط تنتقل البيانات من خلاله، ومستقبِل يتلقاها.' },
-    { title: '2. من المرسل إلى الوسيط', sub: 'المرسل يجهز البيانات ويرسلها عبر المسار', text: 'يبدأ الجهاز المُرسِل العملية، ثم تنتقل البيانات عبر وسيط النقل. وقد يكون هذا الوسيط كابلًا شبكيًا أو اتصالًا لاسلكيًا.' },
-    { title: '3. وصول البيانات', sub: 'المستقبل يستقبل البيانات المرسلة', text: 'بعد عبور وسيط النقل، تصل البيانات إلى الجهاز المُستقبِل. وتتضمن الشبكات تفاصيل أخرى، مثل العناوين والتحقق من سلامة البيانات.' },
-    { title: '4. راجع فهمك', sub: 'اختبر نفسك قبل الانتقال إلى الدرس التالي', text: 'من يبدأ إرسال البيانات؟ المُرسِل. وما دور وسيط النقل؟ نقل البيانات بين الأجهزة. أحسنت، هذه هي الفكرة الأساسية.' }
-  ];
   let searchTerm = '';
-  let classroomStep = 0;
-  let drawing = false;
-  let eraseMode = false;
-  let classroomQuizAnswer = '';
-  let classroomQuestion = '';
   let quizStarted = false;
   let selectedCourse = courses[0];
   let lastToast;
-  let speechRequest = 0;
-  const studentProgress = { completedLessons: 6, saved: false };
+  const studentProgress = { completedLessons: 6 };
   const submittedAssignments = new Set();
   const categoryLabel = role => role === 'المتدرب' ? 'منصة المتدرب' : role === 'المدرب' ? 'مساحة المدرب' : 'منطقة الرياض';
 
@@ -69,7 +57,7 @@
     brand.querySelector('.brand-mark').textContent = role === studentRole ? 'ت' : 'م';
     brand.querySelector('strong').textContent = role === studentRole ? 'المدرب الرقمي' : 'المدرب الرقمي';
     brand.querySelector('small').textContent = categoryLabel(role);
-    document.querySelector('.sidebar-foot').innerHTML = `<span class="pulse"></span> ${role === studentRole ? 'مساحة تعلم شخصية · تجريبية' : 'بيئة العرض التجريبي'}`;
+    document.querySelector('.sidebar-foot').innerHTML = `<span class="pulse"></span> ${role === studentRole ? 'جلسة المتدرب · عرض تفاعلي' : 'بيئة العرض التجريبي'}`;
     const [name, initial] = personas[role] || personas['مدير إدارة المنطقة'];
     document.querySelector('#profile-btn .avatar').textContent = initial;
     document.querySelector('#profile-btn strong').textContent = name;
@@ -99,9 +87,9 @@
   function homePage() {
     const next = schedule[0];
     return pageTitle('الرئيسية', 'مساحتك الشخصية للتعلم والمتابعة — الفصل التدريبي الأول 1448هـ') +
-      `<section class="student-welcome"><div><span class="student-eyebrow">مساحة تعلمك الشخصية</span><h2>أهلًا يا سارة، كمّلي من حيث توقفتِ</h2><p>لديك محاضرة قريبة وواجبان بانتظار التسليم. تقدمك هنا خاص بحسابك التجريبي.</p><button class="btn primary" data-page="student-classroom">استكمال محاضرة الشبكات ←</button></div><div class="welcome-mark" aria-hidden="true">ت</div></section>` +
+      `<section class="student-welcome"><div><span class="student-eyebrow">قاعة حية واحدة جاهزة للعرض</span><h2>أهلًا يا سارة، ابدئي محاضرة الشبكات</h2><p>شاهدي شرحًا مولّدًا مباشرةً عن انتقال البيانات عبر الشبكة، مع سبورة تفاعلية وصوت وأسئلة متابعة. تقدم بقية الصفحات تجريبي ولا يُحفظ.</p><button class="btn primary" data-page="student-classroom">ابدئي المحاضرة الحية ←</button></div><div class="welcome-mark" aria-hidden="true">ت</div></section>` +
       `<div class="kpis student-kpis">${kpi('مقرراتي','4','الفصل الحالي')}${kpi('إكمال الدروس','82%','تقدمك الشخصي')}${kpi('الحضور','94%','هذا الشهر')}${kpi('مهام قريبة','2','قبل نهاية الأسبوع',true)}</div>` +
-      `<div class="student-home-grid"><section class="student-section"><div class="student-section-head"><div><h2>تابعي التعلم</h2><p>مقرراتك مرتبة حسب آخر نشاط</p></div><button class="action-link" data-page="student-courses">كل المقررات ←</button></div><div class="student-course-grid compact-courses">${filteredCourses().slice(0, 2).map(course => courseTile(course, true)).join('') || '<div class="card">لا توجد مقررات مطابقة للبحث.</div>'}</div></section><section class="card next-session-card"><div class="student-section-head"><div><h2>موعدك القادم</h2><p>الأسبوع التدريبي الحالي</p></div><span class="live-student-tag">● قريبًا</span></div><span class="session-day">${next[0]} · ${next[1]}</span><h3>${next[2]}</h3><p>${next[3]}</p><div class="session-separator"></div><p class="muted">قاعة المحاضرة التفاعلية · يبدأ الدرس بموعده</p><button class="btn" data-page="student-schedule">عرض الجدول</button></section></div>` +
+      `<div class="student-home-grid"><section class="student-section"><div class="student-section-head"><div><h2>تابعي التعلم</h2><p>مقرراتك مرتبة حسب آخر نشاط</p></div><button class="action-link" data-page="student-courses">كل المقررات ←</button></div><div class="student-course-grid compact-courses">${filteredCourses().slice(0, 2).map(course => courseTile(course, true)).join('') || '<div class="card">لا توجد مقررات مطابقة للبحث.</div>'}</div></section><section class="card next-session-card"><div class="student-section-head"><div><h2>جلسة العرض المتاحة</h2><p>مقرر الشبكات 101</p></div><span class="live-student-tag">● جلسة واحدة</span></div><span class="session-day">${next[2]}</span><h3>كيف تنتقل البيانات عبر الشبكة؟</h3><p>المرسل · وسيط النقل · المستقبل</p><div class="session-separator"></div><p class="muted">شرح وسبورة وصوت عبر Tutori وOpenAI API.</p><button class="btn primary" data-page="student-classroom">دخول المحاضرة الحية</button></section></div>` +
       `<div class="student-home-grid"><section class="card upcoming-card"><div class="student-section-head"><div><h2>الواجبات القادمة</h2><p>خططي لوقتك قبل موعد التسليم</p></div><button class="action-link" data-page="student-assignments">عرض الكل ←</button></div>${assignments.filter(item => item.status !== 'مكتمل').slice(0, 2).map(item => `<div class="student-list-row"><span class="row-icon">✓</span><div><strong>${item.title}</strong><small>${item.course} · التسليم ${item.due}</small></div><button class="action-link" data-page="student-assignments">فتح</button></div>`).join('')}</section><section class="card progress-summary"><div class="student-section-head"><div><h2>ملخص تقدمي</h2><p>بياناتك لهذا الشهر</p></div></div><div class="metricrow"><span>إكمال المقررات</span><strong>82%</strong></div><div class="progressbar"><span style="width:82%"></span></div><div class="metricrow"><span>حضور المحاضرات</span><strong>94%</strong></div><div class="progressbar"><span style="width:94%"></span></div><button class="btn" data-page="student-attendance">تفاصيل التقدم</button></section></div>`;
   }
   function coursesPage() {
@@ -111,13 +99,14 @@
   }
   function courseDetailPage() {
     const course = selectedCourse;
-    const modules = [course.lesson, 'المفاهيم الأساسية والمصطلحات', 'تطبيق عملي قصير', 'مراجعة الوحدة واختبارها'];
+    const liveCourse = course.id === 'NET-101';
+    const modules = liveCourse ? [course.lesson] : [];
     return pageTitle(course.title, `${course.id} · ${course.category} · المدرب ${course.trainer}`, '<button class="btn" data-page="student-courses">→ العودة لمقرراتي</button>') +
-      `<section class="student-course-detail-hero card"><div><span class="course-code">${course.id}</span><h2>${course.title}</h2><p>شعبة 341 · الفصل التدريبي الأول · تقدمك ${course.progress}%</p></div><button class="btn primary" data-page="student-classroom">دخول الدرس الحالي ←</button></section><section class="card student-module-list"><div class="student-section-head"><div><h2>محتوى المقرر</h2><p>الدروس المتاحة لك بالترتيب</p></div><span class="student-tag">${course.progress}% مكتمل</span></div>${modules.map((module, index) => `<div class="student-list-row"><span class="module-index">${String(index + 1).padStart(2, '0')}</span><div><strong>${module}</strong><small>${index === 0 ? 'قاعة تفاعلية · 18 دقيقة' : 'درس · 12 دقيقة'}</small></div>${index < 2 ? '<span class="student-status done">متاح</span>' : '<span class="student-status">قريبًا</span>'}<button class="btn" data-page="student-classroom">${index === 0 ? 'ابدئي' : 'عرض'}</button></div>`).join('')}</section>`;
+      `<section class="student-course-detail-hero card"><div><span class="course-code">${course.id}</span><h2>${course.title}</h2><p>${liveCourse ? 'شعبة العرض 341 · محاضرة حية واحدة متاحة' : 'مقرر تجريبي · لا توجد له محاضرة حية في هذا العرض'}</p></div>${liveCourse ? '<button class="btn primary" data-page="student-classroom">دخول المحاضرة الحية ←</button>' : '<span class="student-tag">المحاضرة الحية المتاحة: الشبكات 101</span>'}</section><section class="card student-module-list"><div class="student-section-head"><div><h2>${liveCourse ? 'محاضرة العرض' : 'محتوى تجريبي'}</h2><p>${liveCourse ? 'توليد حي للشرح والصوت والسبورة من Tutori' : 'المحتوى التفاعلي لهذا المقرر غير متصل في هذا العرض'}</p></div>${liveCourse ? '<span class="student-tag">محاضرة واحدة</span>' : ''}</div>${liveCourse ? modules.map((module, index) => `<div class="student-list-row"><span class="module-index">0${index + 1}</span><div><strong>${module}</strong><small>جلسة ذكاء اصطناعي تفاعلية · 3 دقائق تقريبًا</small></div><span class="student-status done">متاحة الآن</span><button class="btn primary" data-page="student-classroom">ابدئي المحاضرة</button></div>`).join('') : '<p class="page-note">جرّبي المحاضرة الحية الوحيدة في مقرر الشبكات 101 من القائمة الجانبية أو الصفحة الرئيسية.</p>'}</section>`;
   }
   function schedulePage() {
     return pageTitle('الجدول التدريبي', 'المواعيد والشعب المسجلة في جدولك الشخصي.') +
-      `<section class="card schedule-card"><div class="student-section-head"><div><h2>الأسبوع الحالي</h2><p>الأحد 18 صفر – الأربعاء 21 صفر · توقيت الرياض</p></div><span class="student-tag">1448هـ · الفصل الأول</span></div>${schedule.map((item, index) => `<div class="schedule-row"><div class="schedule-time"><strong>${item[0]}</strong><span>${item[1]}</span></div><div class="schedule-line"><i></i></div><div class="schedule-info"><strong>${item[2]}</strong><small>${item[3]}</small></div><button class="btn ${index === 0 ? 'primary' : ''}" data-page="student-classroom">${index === 0 ? 'دخول القاعة' : 'تفاصيل'}</button></div>`).join('')}</section><div class="notice student-demo-note">المواعيد تجريبية. لا توجد خدمة تقويم أو رابط اجتماع متصل.</div>`;
+      `<section class="card schedule-card"><div class="student-section-head"><div><h2>الأسبوع الحالي</h2><p>الأحد 18 صفر – الأربعاء 21 صفر · توقيت الرياض</p></div><span class="student-tag">1448هـ · الفصل الأول</span></div>${schedule.map((item, index) => `<div class="schedule-row"><div class="schedule-time"><strong>${item[0]}</strong><span>${item[1]}</span></div><div class="schedule-line"><i></i></div><div class="schedule-info"><strong>${item[2]}</strong><small>${item[3]}</small></div>${index === 0 ? '<button class="btn primary" data-page="student-classroom">دخول المحاضرة الحية</button>' : '<button class="btn" disabled title="المحاضرة الوحيدة المتصلة في هذا العرض هي الشبكات 101">غير متاحة في العرض</button>'}</div>`).join('')}</section><div class="notice student-demo-note">الموعد يعرض سيناريو تجريبيًا. المحاضرة الحية المتصلة الوحيدة هنا هي محاضرة الشبكات 101.</div>`;
   }
   function assignmentsPage() {
     return pageTitle('الواجبات والاختبارات', 'تابعي مواعيد التسليم ومحاولاتك ونتائج التقييمات.') +
@@ -136,10 +125,10 @@
       `<div class="student-home-grid"><section class="card profile-summary"><div class="student-profile-avatar">س</div><h2>سارة الغامدي</h2><p>متدربة · تقنية الحاسب</p><span class="student-tag">الكلية التقنية بالأفلاج</span><div class="profile-contact"><div><small>الرقم التدريبي</small><strong>1448•••27</strong></div><div><small>الشعبة الأساسية</small><strong>341</strong></div><div><small>حالة الحساب</small><strong class="student-green">نشط تجريبيًا</strong></div></div></section><section class="card"><h2 class="card-title">تفضيلات المنصة</h2><div class="setting-row"><div><strong>لغة المحتوى</strong><p>العربية</p></div><span class="student-tag">RTL</span></div><div class="setting-row"><div><strong>تذكيرات الواجبات</strong><p>إشعارات داخل العرض فقط</p></div><button class="switch on" data-student-action="toggle-reminder" aria-label="تبديل تذكيرات الواجبات"><i></i></button></div><div class="setting-row"><div><strong>الخصوصية</strong><p>تعرض هذه المساحة بيانات الحساب التجريبي فقط</p></div></div><p class="page-note">يمكن تعديل هذه التفضيلات محليًا في الجلسة؛ لا يوجد حساب أو حفظ دائم.</p></section></div>`;
   }
   function classroomPage() {
-    const lesson = lessonSteps[classroomStep];
-    const progress = Math.round((classroomStep + 1) * 25);
-    return pageTitle('قاعة المحاضرة الحية', 'الشبكات 101 · الوحدة الأولى · قاعة تفاعلية تجريبية', '<button class="btn" data-page="student-course-detail">← العودة للمقرر</button>') +
-      `<div class="classroom-layout"><main class="classroom-main"><section class="classroom-intro card"><div><span class="student-eyebrow">قاعة المحاضرة · شعبة 341</span><h2>كيف تنتقل البيانات عبر الشبكة؟</h2><p>المحاضرة 1 من 4 · المدرب يشرح على السبورة أمامك</p></div><div class="classroom-header-actions"><span class="live-student-tag">● محاضرة مباشرة تجريبية</span><button class="btn" data-student-action="restart-lesson">↺ إعادة الشرح</button></div></section><section class="classroom-board card"><div class="board-toolbar"><strong>✎ السبورة التفاعلية <span id="board-state">المدرب يشرح</span></strong><div class="board-tools"><button class="tool selected" data-student-action="board-pen">✎ قلمك</button><button class="tool" data-student-action="board-erase">⌫ مسح</button><button class="tool" data-student-action="board-clear">مسح السبورة</button></div></div><div class="board-wrap"><canvas id="student-board" aria-label="سبورة المحاضرة التفاعلية"></canvas><span class="board-hint">الشرح يتقدم مع صوت المدرب · يمكنك الرسم على السبورة</span></div><div class="board-controls"><div><strong id="lesson-phase">${lesson.title}</strong><small id="lesson-subtitle">${lesson.sub}</small></div><div><button class="btn" data-student-action="lesson-prev">→ السابق</button><button class="btn primary" data-student-action="lesson-next">الخطوة التالية ←</button><button class="btn" data-student-action="lesson-speak">▶ اسمع الشرح</button><button class="btn" data-student-action="lesson-pause">Ⅱ إيقاف الصوت</button></div></div></section><div class="lesson-step-cards">${['المرسل: يبدأ إرسال البيانات','وسيط النقل: يحمل البيانات بين الجهازين','المستقبل: يستقبل البيانات'].map((text, i) => `<article class="card"><small>الخطوة 0${i + 1}</small><strong>${text.split(':')[0]}</strong><span>${text.split(':')[1]}</span></article>`).join('')}</div></main><aside class="classroom-side"><section class="card trainer-card"><div class="trainer-avatar">ف</div><div><h3>فهد القحطاني</h3><p>مدرب مقرر أساسيات الشبكات</p><span class="student-green" id="trainer-speaking">جاهز للشرح والتفاعل</span></div><p class="page-note">يشرح الفكرة ويرسمها، ثم يتوقف ليستمع لسؤالك.</p></section><section class="card live-chat-card"><h3>💬 الحوار مع المدرب</h3><div class="classroom-transcript" id="classroom-transcript" aria-live="polite">المدرب: أهلًا بك. لنتعرف إلى كيفية انتقال البيانات ببساطة. لدينا مُرسِل، ووسيط تنتقل البيانات من خلاله، ومُستقبِل يتلقاها.</div><div class="student-question-row"><input id="classroom-question" placeholder="اسألي المدرب عن نقطة…" aria-label="سؤالك للمدرب"><button class="btn primary" data-student-action="ask-trainer">إرسال</button></div><div class="classroom-shortcuts"><button class="btn" data-student-action="quick-question" data-question="مش فاهم الفكرة، اشرح تاني">اشرح تاني</button><button class="btn" data-student-action="quick-question" data-question="اديني مثال من الواقع">مثال واقعي</button><button class="btn" data-student-action="quick-question" data-question="اختبر فهمي بسؤال">اختبر فهمي</button><button class="btn" data-student-action="voice-question">🎙 تحدث</button></div><small class="page-note">الحوار الصوتي والإجابات نسخة عرض؛ لا يوجد نموذج ذكاء اصطناعي متصل.</small></section><section class="card"><h3>تقدم المحاضرة</h3><div class="metricrow"><span>إكمال الدرس</span><strong id="classroom-percent">${progress}%</strong></div><div class="progressbar"><span id="classroom-progress" style="width:${progress}%"></span></div><div class="metricrow"><span>الخطوة الحالية</span><strong id="classroom-step-count">${classroomStep + 1} / 4</strong></div><div class="metricrow"><span>فهمك المبدئي</span><strong id="classroom-understanding">${classroomQuizAnswer ? 'تم التفاعل' : 'بانتظار إجابتك'}</strong></div><button class="btn" data-student-action="save-progress">حفظ تقدم الجلسة</button></section><section class="card"><h3>سؤال مراجعة</h3><p>أي جزء يبدأ إرسال البيانات؟</p><div class="answer-list"><button class="btn" data-student-action="classroom-answer" data-answer="وسيط النقل">وسيط النقل</button><button class="btn" data-student-action="classroom-answer" data-answer="المرسل">المرسل</button><button class="btn" data-student-action="classroom-answer" data-answer="المستقبل">المستقبل</button></div><p class="page-note" id="classroom-quiz-feedback" aria-live="polite"></p></section></aside></div>`;
+    const tutoriUrl = 'http://127.0.0.1:7860/';
+    const launch = `<a class="btn primary live-lecture-launch" href="${tutoriUrl}?__theme=light" target="_blank" rel="noopener noreferrer">ابدأ المحاضرة في نافذة جديدة ↗</a>`;
+    return pageTitle('قاعة المحاضرة الحية', 'الشبكات 101 · شعبة العرض 341 · محاضرة واحدة متصلة فعليًا', '<button class="btn" data-page="student-courses">العودة للمقررات ←</button>') +
+      `<div class="classroom-layout live-classroom-layout"><main class="classroom-main"><section class="classroom-intro card"><div><span class="student-eyebrow">قاعة المحاضرة · NET-101</span><h2>كيف تنتقل البيانات عبر شبكة الحاسب؟</h2><p>محاضرة عربية واحدة يولّدها Tutori مباشرةً بالشرح والصوت والسبورة التفاعلية.</p></div><div class="classroom-header-actions"><span class="live-student-tag">● محاضر ذكي متصل</span>${launch}</div></section><section class="classroom-board card"><div class="board-toolbar"><strong>✎ معاينة السبورة <span>توضيحية</span></strong><span class="board-preview-label">السبورة الحية تظهر عند بدء المحاضرة في Tutori</span></div><div class="board-wrap live-board-wrap"><div class="live-board-preview" role="img" aria-label="معاينة توضيحية لمسار البيانات من الهاتف عبر الموجّه إلى خادم ويب"><div class="network-node"><small>المرسل</small><strong>هاتفك</strong><span>يبدأ الطلب</span></div><span class="network-arrow" aria-hidden="true">←</span><div class="network-node network-node-router"><small>وسيط النقل</small><strong>Wi‑Fi · موجّه</strong><span>يوجّه حزم البيانات</span></div><span class="network-arrow" aria-hidden="true">←</span><div class="network-node network-node-server"><small>المستقبل</small><strong>خادم ويب</strong><span>يرسل الاستجابة</span></div></div><span class="board-hint">رسم توضيحي لموضوع المحاضرة — الرسم التفاعلي الحقيقي يُنشأ داخل Tutori</span></div><div class="board-controls"><div><strong>محاضرة واحدة · نحو 3 دقائق</strong><small>سؤال البداية مهيأ مسبقًا في صفحة Tutori</small></div><div>${launch}</div></div></section></main><aside class="classroom-side"><section class="card trainer-card live-trainer-card"><div class="trainer-avatar">AI</div><div><h3>مدرب الشبكات الذكي</h3><p>Tutori · OpenAI API</p><span class="student-green">جاهز لبدء المحاضرة</span></div><p class="page-note">الشرح يولّد عند الطلب، ويعرض خطواته على سبورة حية. يمكنك متابعة الأسئلة بعد بدء المحاضرة.</p></section><section class="card live-launch-card"><h3>ابدأ المحاضرة</h3><p>يفتح المحاضر في نافذة مستقلة، والسؤال عن انتقال البيانات جاهز مسبقًا.</p>${launch}<small>داخل Tutori اضغط «ابدأ المحاضرة» لتوليد الشرح والصوت والرسم.</small></section><section class="card live-outline-card"><h3>خطة المحاضرة</h3><ol><li>من يرسل البيانات؟</li><li>كيف ينقلها Wi‑Fi والموجّه؟</li><li>كيف يرد خادم الويب؟</li></ol><p class="page-note">هذه محاور الدرس؛ الشرح والرسم الفعليان يُولّدان من النموذج.</p></section></aside></div><p class="live-lecture-disclaimer">توليد الشرح والصوت يستخدم OpenAI API وقد تُحتسب تكلفة. بيانات الحضور والتقدم خارج القاعة تظل تجريبية ولا تُحفظ.</p>`;
   }
   function renderStudentPage(page) {
     const renderers = {
@@ -159,7 +148,6 @@
       appRoot.innerHTML = renderStudentPage(state.page);
       const courseSearch = document.getElementById('student-course-search');
       courseSearch?.addEventListener('input', event => { const caret = event.target.selectionStart; searchTerm = event.target.value.trim().toLowerCase(); render(); const updated = document.getElementById('student-course-search'); updated?.focus(); updated?.setSelectionRange(caret, caret); });
-      if (state.page === 'student-classroom') mountClassroom();
       return;
     }
     if (String(state.page).startsWith('student-')) state.page = 'dashboard';
@@ -171,111 +159,10 @@
     renderRoleShell(role);
   };
 
-  function drawLesson() {
-    const canvas = document.getElementById('student-board');
-    if (!canvas) return;
-    const box = canvas.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.max(1, Math.floor(box.width * dpr));
-    canvas.height = Math.max(1, Math.floor(box.height * dpr));
-    const ctx = canvas.getContext('2d');
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const w = box.width, h = box.height, lesson = lessonSteps[classroomStep];
-    ctx.clearRect(0, 0, w, h);
-    ctx.fillStyle = '#0a211f';
-    ctx.fillRect(0, 0, w, h);
-    ctx.fillStyle = '#e8f6f1'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-    ctx.font = '700 24px Tajawal, Tahoma, sans-serif'; ctx.fillText(['انتقال البيانات عبر الشبكة','المرسل يبعث البيانات','البيانات تصل للمستقبل','راجع الفكرة الأساسية'][classroomStep], w / 2, 24);
-    const centerY = h * .44, nodeW = Math.min(150, w * .24), nodeH = 68;
-    const xs = [w * .12, w * .41, w * .70];
-    const labels = ['المرسل', 'وسيط النقل', 'المستقبل'];
-    const colors = ['#40d8bd', '#4ab6d0', '#70d7ad'];
-    const drawBox = (x, label, color) => {
-      ctx.fillStyle = '#11342f'; ctx.strokeStyle = color; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.roundRect(x, centerY, nodeW, nodeH, 14); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = '#e8f6f1'; ctx.font = '700 17px Tajawal, Tahoma, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(label, x + nodeW / 2, centerY + nodeH / 2);
-    };
-    const arrow = (x1, x2, color) => {
-      if (classroomStep < (x1 < xs[1] ? 1 : 2)) return;
-      const y = centerY + nodeH / 2;
-      ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x2, y); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(x2, y); ctx.lineTo(x2 - 11, y - 7); ctx.lineTo(x2 - 11, y + 7); ctx.closePath(); ctx.fill();
-    };
-    drawBox(xs[0], labels[0], colors[0]); drawBox(xs[1], labels[1], colors[1]); drawBox(xs[2], labels[2], colors[2]);
-    arrow(xs[0] + nodeW + 10, xs[1] - 10, colors[0]); arrow(xs[1] + nodeW + 10, xs[2] - 10, colors[2]);
-    ctx.fillStyle = '#9bb7ad'; ctx.font = '15px Tajawal, Tahoma, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-    ctx.fillText(lesson.sub, w / 2, centerY + nodeH + 38);
-    const phase = document.getElementById('lesson-phase'); if (phase) phase.textContent = lesson.title;
-    const subtitle = document.getElementById('lesson-subtitle'); if (subtitle) subtitle.textContent = lesson.sub;
-    const percent = document.getElementById('classroom-percent'); if (percent) percent.textContent = `${(classroomStep + 1) * 25}%`;
-    const bar = document.getElementById('classroom-progress'); if (bar) bar.style.width = `${(classroomStep + 1) * 25}%`;
-    const stepCount = document.getElementById('classroom-step-count'); if (stepCount) stepCount.textContent = `${classroomStep + 1} / 4`;
-  }
-  function mountClassroom() {
-    drawLesson();
-    const canvas = document.getElementById('student-board');
-    canvas?.addEventListener('pointerdown', event => {
-      drawing = true; canvas.setPointerCapture(event.pointerId);
-      const rect = canvas.getBoundingClientRect(), ctx = canvas.getContext('2d');
-      ctx.beginPath(); ctx.moveTo(event.clientX - rect.left, event.clientY - rect.top);
-    });
-    canvas?.addEventListener('pointermove', event => {
-      if (!drawing) return;
-      const rect = canvas.getBoundingClientRect(), ctx = canvas.getContext('2d');
-      ctx.lineTo(event.clientX - rect.left, event.clientY - rect.top);
-      ctx.strokeStyle = eraseMode ? '#0a211f' : '#43d8bd'; ctx.lineWidth = eraseMode ? 24 : 3; ctx.lineCap = 'round'; ctx.stroke();
-    });
-    ['pointerup', 'pointercancel', 'pointerleave'].forEach(name => canvas?.addEventListener(name, () => { drawing = false; }));
-  }
-  function speak(text) {
-    if (!('speechSynthesis' in window)) { toast('المتصفح لا يدعم قراءة النص صوتيًا.'); return; }
-    const synth = window.speechSynthesis;
-    const request = ++speechRequest;
-    synth.cancel();
-    const statusEl = document.getElementById('trainer-speaking');
-    if (request !== speechRequest) return;
-    // Start synchronously in the click handler. Some mobile browsers block speech
-    // if it is deferred until the asynchronous `voiceschanged` event.
-    const voices = synth.getVoices();
-    const voice = voices.find(item => /^ar[-_]SA$/i.test(item.lang))
-      || voices.find(item => /^ar([_-]|$)/i.test(item.lang) && !/^ar[-_]EG$/i.test(item.lang));
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = voice?.lang || 'ar-SA';
-    if (voice) utterance.voice = voice;
-    utterance.rate = .92;
-    if (statusEl) statusEl.textContent = voice && /^ar[-_]SA$/i.test(voice.lang)
-      ? 'يشرح المدرب باللغة العربية الفصحى…'
-      : 'يشرح المدرب باللغة العربية…';
-    utterance.onend = () => { const el = document.getElementById('trainer-speaking'); if (el) el.textContent = 'جاهز للشرح بصوت عربي'; };
-    utterance.onerror = event => {
-      const el = document.getElementById('trainer-speaking');
-      if (el) el.textContent = 'تعذر تشغيل الصوت العربي';
-      if (event.error === 'voice-unavailable' || event.error === 'language-unavailable') {
-        toast('الجهاز لا يوفر صوتًا عربيًا للمتصفح. فعّل الصوت العربي من إعدادات الجهاز ثم أعد المحاولة.');
-      }
-    };
-    synth.speak(utterance);
-  }
   function toast(message) {
     if (lastToast) lastToast.remove();
     const node = document.createElement('div'); node.className = 'toast success'; node.textContent = message;
     document.getElementById('toast-root').append(node); lastToast = node; window.setTimeout(() => node.remove(), 2600);
-  }
-  function answerFor(question) {
-    if (question.includes('تاني') || question.includes('مش فاهم')) return 'لنتأمل مثالًا بسيطًا: عندما ترسلين رسالة إلى صديقتك، يكون جهازك هو المُرسِل، وتكون شبكة الاتصال وسيط النقل، ويكون جهاز صديقتك هو المُستقبِل.';
-    if (question.includes('مثال')) return 'عندما ترسلين صورة، يرسل جهازك البيانات، وتنقلها الشبكة، ثم يستقبلها الجهاز الآخر.';
-    if (question.includes('اختبر')) return 'إليك سؤالًا: إذا أرسل الحاسوب ملفًا إلى الطابعة، فما الجهاز الذي يبدأ الإرسال؟';
-    if (question.includes('وسيط')) return 'وسيط النقل هو المسار الذي تسلكه البيانات، مثل كابل الشبكة أو الاتصال اللاسلكي.';
-    if (question.includes('مرسل')) return 'المُرسِل هو الجهاز الذي يبدأ عملية إرسال البيانات.';
-    return 'يمكنني في هذا العرض توضيح المفهوم الأساسي: يُرسِل المُرسِل البيانات، وينقلها وسيط النقل، ثم يستقبلها المُستقبِل. لا يتصل هذا العرض بنموذج ذكاء اصطناعي.';
-  }
-  function sendQuestion(question) {
-    if (!question.trim()) return;
-    const transcript = document.getElementById('classroom-transcript');
-    if (transcript) transcript.textContent = `أنتِ: ${question}\n\nالمدرب: ${answerFor(question)}`;
-    const understanding = document.getElementById('classroom-understanding'); if (understanding) understanding.textContent = 'تم التفاعل';
-    classroomQuestion = question; speak(answerFor(question));
   }
   document.addEventListener('click', event => {
     const courseButton = event.target.closest('[data-student-course]');
@@ -286,31 +173,7 @@
     const button = event.target.closest('[data-student-action]');
     if (!button) return;
     const action = button.dataset.studentAction;
-    if (action === 'lesson-next' || action === 'lesson-prev' || action === 'restart-lesson') {
-      classroomStep = action === 'restart-lesson' ? 0 : Math.max(0, Math.min(lessonSteps.length - 1, classroomStep + (action === 'lesson-next' ? 1 : -1)));
-      drawLesson();
-    } else if (action === 'lesson-speak') speak(lessonSteps[classroomStep].text);
-    else if (action === 'lesson-pause') {
-      if (window.speechSynthesis?.speaking) { window.speechSynthesis.pause(); toast('تم إيقاف الشرح مؤقتًا. اضغطي اسمع الشرح للمتابعة.'); }
-      else toast('ابدئي الشرح أولًا من زر اسمع الشرح.');
-    } else if (action === 'board-pen') { eraseMode = false; document.querySelector('[data-student-action="board-pen"]')?.classList.add('selected'); document.querySelector('[data-student-action="board-erase"]')?.classList.remove('selected'); }
-    else if (action === 'board-erase') { eraseMode = true; document.querySelector('[data-student-action="board-erase"]')?.classList.add('selected'); document.querySelector('[data-student-action="board-pen"]')?.classList.remove('selected'); }
-    else if (action === 'board-clear') drawLesson();
-    else if (action === 'ask-trainer') { const input = document.getElementById('classroom-question'); sendQuestion(input.value); input.value = ''; }
-    else if (action === 'quick-question') sendQuestion(button.dataset.question || '');
-    else if (action === 'voice-question') {
-      const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!Recognition) toast('التعرف على الصوت غير مدعوم هنا؛ اكتبي سؤالك في الحقل.');
-      else { const recognition = new Recognition(); recognition.lang = 'ar-SA'; recognition.onresult = result => sendQuestion(result.results[0][0].transcript); recognition.onerror = () => toast('تعذر سماع السؤال؛ حاولي مرة أخرى.'); recognition.start(); }
-    } else if (action === 'classroom-answer') {
-      classroomQuizAnswer = button.dataset.answer || '';
-      const feedback = document.getElementById('classroom-quiz-feedback');
-      const correct = classroomQuizAnswer === 'المرسل';
-      if (feedback) feedback.textContent = correct ? 'إجابة صحيحة! المرسل هو الذي يبدأ الإرسال. أحسنتِ.' : 'فكري في الجهاز الذي يبدأ إرسال البيانات، ثم حاولي مرة أخرى.';
-      const understanding = document.getElementById('classroom-understanding'); if (understanding) understanding.textContent = correct ? 'ممتاز ✓' : 'نراجع الفكرة';
-      if (correct) { studentProgress.completedLessons = Math.min(8, studentProgress.completedLessons + 1); toast('إجابة صحيحة، أحسنتِ!'); }
-    } else if (action === 'save-progress') { studentProgress.saved = true; toast('تم تحديث تقدمك في جلسة العرض الحالية فقط.'); }
-    else if (action === 'submit-assignment') { submittedAssignments.add(button.dataset.assignment); render(); toast('تم تسجيل التسليم التجريبي في هذه الجلسة.'); }
+    if (action === 'submit-assignment') { submittedAssignments.add(button.dataset.assignment); render(); toast('تم تسجيل التسليم التجريبي في هذه الجلسة.'); }
     else if (action === 'assignment-details') toast('هذه حالة تجريبية؛ لا يوجد رفع ملفات أو تسليم فعلي.');
     else if (action === 'start-quiz') { quizStarted = true; render(); }
     else if (action === 'course-quiz-answer') {
@@ -318,10 +181,6 @@
       if (feedback) feedback.textContent = button.dataset.answer === 'المرسل' ? 'إجابة صحيحة — المرسل يبدأ الإرسال.' : 'ليست الإجابة الصحيحة. فكري في الجهاز الذي يبدأ الإرسال.';
     } else if (action === 'toggle-reminder') { button.classList.toggle('on'); toast('تم تحديث التفضيل في هذه الجلسة فقط.'); }
   });
-  document.addEventListener('keydown', event => {
-    if (event.key === 'Enter' && event.target.id === 'classroom-question') { event.preventDefault(); document.querySelector('[data-student-action="ask-trainer"]')?.click(); }
-  });
-  window.addEventListener('resize', () => { if (roleSelector.value === studentRole && state.page === 'student-classroom') drawLesson(); });
   function escapeHtml(value) {
     return String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
   }
