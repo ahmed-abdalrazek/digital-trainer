@@ -4,7 +4,7 @@ Tutori engine — an OpenAI API-backed, long-horizon whiteboard tutor.
 Model roles:
   * gpt-6-luna ......................... every agentic and visual intelligence role
   * gpt-transcribe ...................... speech recognition
-  * gpt-4o-mini-tts ..................... spoken lesson audio
+  * ElevenLabs Multilingual v2 .......... spoken lesson audio
 
 run_turn() is a generator that yields event dicts; app.py turns those into
 streaming UI updates. Events:
@@ -21,14 +21,49 @@ import io
 import json
 import mimetypes
 import os
+from pathlib import Path
 import re
 import subprocess
 import time
 import wave
+from urllib.parse import quote
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
+
+try:
+    import truststore
+    truststore.inject_into_ssl()
+except ImportError:
+    pass
 
 import requests
 from board_quality import diagram_family, improve_step_board
+
+
+def _load_local_env():
+    """Load ignored local .env settings without replacing process variables."""
+    env_file = Path(__file__).with_name(".env")
+    if not env_file.is_file():
+        return
+    try:
+        lines = env_file.read_text(encoding="utf-8-sig").splitlines()
+    except OSError:
+        return
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].lstrip()
+        key, sep, value = line.partition("=")
+        key, value = key.strip(), value.strip()
+        if not sep or not key or key in os.environ:
+            continue
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        os.environ[key] = value
+
+
+_load_local_env()
 
 if os.environ.get("TUTORI_DEBUG") == "1":
     import faulthandler
@@ -39,8 +74,9 @@ MODEL_ID = os.environ.get("OPENAI_MODEL", "gpt-6-luna")
 LLM_ID = MODEL_ID
 COACH_ID = MODEL_ID
 ASR_ID = os.environ.get("OPENAI_ASR_MODEL", "gpt-transcribe")
-TTS_ID = os.environ.get("OPENAI_TTS_MODEL", "gpt-4o-mini-tts")
-TTS_VOICE = os.environ.get("OPENAI_TTS_VOICE", "marin")
+TTS_ID = os.environ.get("ELEVENLABS_MODEL_ID", "eleven_multilingual_v2")
+TTS_VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID", "5HAezIQAaoSgJypcI0NP")
+TTS_PROVIDER = "elevenlabs"
 USE_BOARD_MODEL = False
 BOARD_ARTIST = None
 
@@ -136,6 +172,8 @@ Respond with ONE JSON object and NOTHING else (no markdown fences, no prose outs
 
 Rules for "say" (spoken by a TTS voice):
 - Natural, friendly spoken language. Follow TARGET LESSON LENGTH below.
+- If the learner speaks Arabic, answer in clear Modern Standard Arabic or natural Saudi Arabic;
+  do not use Egyptian dialect. Keep the language consistent throughout the lesson.
 - Never use markdown, symbols, URLs or formulas as symbols: say "x squared", "pi", "H two O".
 - Sound like a human tutor mid-conversation: vary your openings, address the learner directly.
 
@@ -221,6 +259,8 @@ Respond with ONE JSON object and NOTHING else (no markdown fences, no prose outs
 
 Rules for "say" (spoken by a TTS voice):
 - Natural, friendly spoken language. 1-3 sentences, 15 to 35 words per step.
+- If the learner speaks Arabic, use clear Modern Standard Arabic or natural Saudi Arabic;
+  do not use Egyptian dialect. Keep labels and narration in the same language.
 - Never use markdown, symbols, URLs or formulas as symbols: say "x squared", "pi", "H two O".
 - Sound like a human tutor mid-conversation: vary your openings, address the learner directly.
 
@@ -1414,65 +1454,64 @@ def _encode_browser_audio(pcm):
 
 
 def set_tts_voice(voice):
-    """Set the built-in OpenAI voice used for upcoming lesson steps."""
-    global TTS_VOICE
-    voice = str(voice or "").strip().lower()
-    if voice not in {"marin", "cedar"}:
-        raise ValueError("Tutori supports the OpenAI marin and cedar voices.")
-    TTS_VOICE = voice
-    print(f"[tutori] OpenAI TTS voice set to {TTS_VOICE}", flush=True)
-    return TTS_VOICE
+    """Set the ElevenLabs voice ID used for upcoming lesson steps."""
+    global TTS_VOICE_ID
+    voice = str(voice or "").strip()
+    if not voice:
+        raise ValueError("أدخل معرّف صوت ElevenLabs صالحًا.")
+    TTS_VOICE_ID = voice
+    return TTS_VOICE_ID
 
 
 def synthesize(text, voice=None):
-    """Text -> (base64 audio, duration) via the OpenAI text-to-speech API."""
+    """Text -> (base64 MP3, estimated duration) via ElevenLabs TTS."""
     global _TTS_BLOCKED_UNTIL, _TTS_BLOCK_REASON
-    spoken = _SPOKEN_CLEAN.sub("", text).strip()
+    spoken = _SPOKEN_CLEAN.sub("", str(text or "")).strip()
     if not spoken:
         return None, 1.5
-    if time.time() < _TTS_BLOCKED_UNTIL:
-        return None, max(2.2, len(spoken.split()) * 0.36)
     word_count = len(spoken.split())
+    api_key = os.environ.get("ELEVENLABS_API_KEY", "").strip()
+    if not api_key:
+        _TTS_BLOCK_REASON = "ELEVENLABS_API_KEY is not configured"
+        print("[tutori] ElevenLabs TTS unavailable: ELEVENLABS_API_KEY is not configured", flush=True)
+        return None, max(2.2, word_count * 0.4)
+    if time.time() < _TTS_BLOCKED_UNTIL:
+        return None, max(2.2, word_count * 0.4)
+    voice_id = str(voice or TTS_VOICE_ID).strip()
     try:
         response = requests.post(
-            f"{OPENAI_URL}/audio/speech",
-            headers=_headers(),
+            f"https://api.elevenlabs.io/v1/text-to-speech/{quote(voice_id, safe='')}?output_format=mp3_44100_128",
+            headers={"xi-api-key": api_key, "Content-Type": "application/json", "Accept": "audio/mpeg"},
             json={
-                "model": TTS_ID,
-                "voice": voice or TTS_VOICE,
-                "input": spoken[:4000],
-                "instructions": (
-                    "Read the supplied text verbatim. Do not translate or add words. "
-                    "For Arabic text, use clear Modern Standard Arabic pronunciation. "
-                    "Otherwise use the language of the supplied text. Speak clearly "
-                    "and calmly at a measured teaching pace."
-                ),
-                "response_format": "pcm",
+                "text": spoken[:4000],
+                "model_id": TTS_ID,
+                "voice_settings": {
+                    "stability": 0.5,
+                    "similarity_boost": 0.78,
+                    "style": 0.15,
+                    "use_speaker_boost": True,
+                    # A slightly slower pace is easier to follow in lessons.
+                    "speed": 0.88,
+                },
             },
             timeout=120,
         )
         if not response.ok:
-            raise RuntimeError(
-                f"OpenAI speech API returned {response.status_code}: {response.text[:200]}"
-            )
-        pcm = response.content
-        if len(pcm) < 4800:
-            raise RuntimeError("OpenAI speech API returned empty audio")
-        browser_audio, audio_format, playback_tempo = _encode_browser_audio(pcm)
-        duration = max(0.5, len(pcm) / (24000 * 2 * playback_tempo))
+            raise RuntimeError(f"ElevenLabs speech API returned {response.status_code}: {response.text[:200]}")
+        audio = response.content
+        if len(audio) < 1000:
+            raise RuntimeError("ElevenLabs returned an empty audio file")
+        duration = max(0.5, word_count / (2.5 * 0.88))
         _TTS_BLOCK_REASON = ""
-        print(
-            f"[tutori] OpenAI TTS ready: {word_count} words, {duration:.1f}s, {audio_format}",
-            flush=True,
-        )
-        return base64.b64encode(browser_audio).decode("ascii"), duration
+        print(f"[tutori] ElevenLabs TTS ready: {word_count} words, {duration:.1f}s, MP3", flush=True)
+        return base64.b64encode(audio).decode("ascii"), duration
     except Exception as exc:  # noqa: BLE001
         reason = str(exc)
         _TTS_BLOCK_REASON = reason[:220]
-        if "404" in reason or "401" in reason or "403" in reason:
+        if any(code in reason for code in ("401", "403", "404", "429")):
             _TTS_BLOCKED_UNTIL = time.time() + 30
-        print(f"[tutori] OpenAI TTS unavailable; captions only: {reason[:220]}", flush=True)
-        return None, max(2.2, word_count * 0.36)
+        print(f"[tutori] ElevenLabs TTS unavailable; captions only: {reason[:220]}", flush=True)
+        return None, max(2.2, word_count * 0.4)
 
 
 # --------------------------------------------------------------------------
@@ -1707,15 +1746,30 @@ For a long lesson, plan several visual chapters and explicitly reuse the board."
 
 
 def _duration_spec(minutes):
-    minutes = min(10, max(1, int(minutes or 3)))
+    minutes = min(5, max(1, int(minutes or 5)))
     steps = min(22, max(4, 2 + minutes * 2))
-    target_words = minutes * 115
+    target_words = minutes * 140
     words_per_step = min(62, max(26, round(target_words / steps)))
     return minutes, steps, (
         f"about {minutes} minute{'s' if minutes != 1 else ''}; exactly {steps} steps; "
         f"roughly {words_per_step} spoken words per step; approximately {target_words} "
         "spoken words total. Keep every step substantive and avoid filler."
     )
+
+
+def _friendly_generation_error(error):
+    """Translate common provider failures without exposing server details."""
+    message = str(error or "").lower()
+    if "openai_api_key" in message or "api key is not configured" in message:
+        return ("مفتاح OpenAI API غير مضبوط. أضف OPENAI_API_KEY إلى إعدادات تشغيل Tutori "
+                "ثم أعد تشغيل الخادم. اشتراك ChatGPT لا يشمل طلبات API.")
+    if any(term in message for term in ("401", "403", "invalid_api_key", "authentication")):
+        return "تعذّر التحقق من مفتاح OpenAI API أو صلاحياته. راجع المفتاح وإعدادات المشروع ثم أعد المحاولة."
+    if any(term in message for term in ("429", "insufficient_quota", "rate limit", "billing")):
+        return "وصل استخدام OpenAI API إلى حدّه الحالي. راجع الرصيد وحدود الاستخدام ثم أعد المحاولة."
+    if any(term in message for term in ("timed out", "timeout", "temporarily unavailable", "connection")):
+        return "تأخر الاتصال بخدمة التوليد. أعد المحاولة بعد قليل؛ لم يتم تجهيز هذا الجزء بعد."
+    return "تعذّر تجهيز المحاضرة. أعد المحاولة، وإذا تكرر الخطأ راجع سجل الخادم."
 
 
 def analyze_board(data_url):
@@ -1876,7 +1930,10 @@ def run_turn(audio_path, typed_text, board_snapshot, history, profile,
             yield {"type": "status", "status": "thinking", "detail": "Reading your whiteboard…"}
             board_observation = analyze_board(board_snapshot)
 
-        minutes, _, duration_guidance = _duration_spec(lesson_minutes)
+        # A follow-up is a short answer, not another full-length lecture.
+        minutes, planned_steps, duration_guidance = _duration_spec(
+            1 if history else lesson_minutes
+        )
         yield {"type": "status", "status": "thinking", "detail": "Choosing the clearest teaching path…"}
         plan = build_agent_plan(question, history, profile, notes, board_now,
                                 board_observation, minutes, web_on)
@@ -1898,55 +1955,15 @@ def run_turn(audio_path, typed_text, board_snapshot, history, profile,
                 yield {"type": "research", "notes": web_context}
 
         teacher_model = select_teacher_model(question, minutes, web_context, board_observation)
-        deep_future = None
-        generation_pool = None
-        if minutes > 1:
-            # Start a deeper chapter in parallel with a concise visual
-            # overview so a long lesson draws its first useful panel quickly.
-            deep_minutes = max(1, minutes - 1)
-            _, _, deep_guidance = _duration_spec(deep_minutes)
-            deep_plan = dict(plan)
-            deep_plan["warm_start_context"] = (
-                "A one-minute visual overview plays first. Begin with a "
-                "fresh deeper chapter; avoid greetings and do not repeat the basic overview."
-            )
-            deep_msgs = _build_messages(
-                question, history, profile, pace, web_context, deep_plan,
-                board_observation, deep_guidance, notes=notes or "", board_now=board_now,
-            )
-            deep_tokens = min(18000, 3800 + deep_minutes * 1100)
-            generation_pool = ThreadPoolExecutor(max_workers=1)
-            deep_future = generation_pool.submit(
-                openai_chat, deep_msgs, model=LLM_ID,
-                max_tokens=deep_tokens, temperature=0.38,
-                json_mode=True, reasoning="low", timeout=360,
-            )
-            _, _, quick_guidance = _duration_spec(1)
-            quick_plan = dict(plan)
-            quick_plan["sequence"] = [
-                "answer directly", "show the mechanism", "name the key rule", "check understanding"
-            ]
-            quick_plan["visual_chapters"] = [
-                plan.get("known_diagram_family") or "one clean overview diagram"
-            ]
-            msgs = _build_messages(
-                question, history, profile, pace, web_context, quick_plan,
-                board_observation, quick_guidance, notes=notes or "", board_now=board_now,
-            )
-            teacher_model = MODEL_ID
-            teacher_name = MODEL_ID
-            max_tokens = 3200
-            reasoning = "low"
-            detail = f"{MODEL_ID} starts the first panel while a deeper chapter is prepared…"
-        else:
-            teacher_name = MODEL_ID
-            msgs = _build_messages(
-                question, history, profile, pace, web_context, plan,
-                board_observation, duration_guidance, notes=notes or "", board_now=board_now,
-            )
-            max_tokens = 3200
-            reasoning = "low"
-            detail = f"{MODEL_ID} is sketching the first panel…"
+        teacher_name = teacher_model
+        msgs = _build_messages(
+            question, history, profile, pace, web_context, plan,
+            board_observation, duration_guidance, notes=notes or "", board_now=board_now,
+        )
+        max_tokens = min(18000, 3800 + minutes * 1100)
+        reasoning = "low"
+        detail = "Preparing a concise answer…" if history else \
+            f"Preparing one coherent {minutes}-minute lesson…"
         yield {"type": "status", "status": "teaching", "detail": detail}
         pool = ThreadPoolExecutor(max_workers=4) if voice_on else None
         active_ops = list(board_now or [])[-80:]
@@ -1984,11 +2001,11 @@ def run_turn(audio_path, typed_text, board_snapshot, history, profile,
             if pool and step["say"]:
                 future = audio_future or pool.submit(synthesize, step["say"])
                 try:
-                    # OpenAI TTS is the only narrator. Wait for its parallel
-                    # render instead of abruptly switching to a device voice.
+                    # ElevenLabs is the narrator. Wait for its parallel render
+                    # instead of abruptly switching to a device voice.
                     audio_b64, dur = future.result(timeout=110)
                 except FutureTimeout:
-                    print(f"[tutori] OpenAI TTS step {idx + 1} timed out; captions only",
+                    print(f"[tutori] ElevenLabs TTS step {idx + 1} timed out; captions only",
                           flush=True)
                 except Exception as exc:
                     print(f"[tutori] voice step {idx + 1} failed: {exc!r}", flush=True)
@@ -2004,6 +2021,7 @@ def run_turn(audio_path, typed_text, board_snapshot, history, profile,
         full_text = ""
         raw_steps = []
         best_text, best_steps = "", []
+        last_generation_error = None
         for attempt, temperature in enumerate((0.34, 0.14), start=1):
             try:
                 candidate_text = openai_chat(
@@ -2012,7 +2030,14 @@ def run_turn(audio_path, typed_text, board_snapshot, history, profile,
                     timeout=75,
                 )
             except Exception as exc:
+                last_generation_error = exc
                 print(f"[tutori] {MODEL_ID} attempt {attempt} failed: {exc!r}", flush=True)
+                failure = str(exc).lower()
+                if any(marker in failure for marker in (
+                    "openai_api_key", "invalid_api_key", "401", "403",
+                    "insufficient_quota", "billing",
+                )):
+                    break
                 continue
             candidate_steps = extract_lesson_steps(candidate_text)
             if len(candidate_steps) > len(best_steps):
@@ -2023,6 +2048,8 @@ def run_turn(audio_path, typed_text, board_snapshot, history, profile,
                   f"{len(candidate_steps)} lesson steps; retrying", flush=True)
         full_text, raw_steps = best_text, best_steps
         if not full_text and not raw_steps:
+            if last_generation_error is not None:
+                raise RuntimeError(str(last_generation_error)) from last_generation_error
             raise RuntimeError(f"{MODEL_ID} timed out before the first panel")
         reliable = known_quick_fallback(question)
         if len(raw_steps) < 3 and reliable:
@@ -2032,14 +2059,14 @@ def run_turn(audio_path, typed_text, board_snapshot, history, profile,
             plain = re.sub(r"[{}\[\]\"]", "", full_text).strip()[:650]
             raw_steps = [{"say": plain or "Let's build that idea one clean step at a time.",
                           "board": []}]
-        print(f"[tutori] quick chapter: {len(raw_steps)} raw steps, "
+        print(f"[tutori] lesson: {len(raw_steps)} raw steps, "
               f"{len(full_text)} chars", flush=True)
         quick_audio_futures = {}
         if pool:
-            for idx, raw_step in enumerate(raw_steps[:8]):
+            for idx, raw_step in enumerate(raw_steps[:planned_steps]):
                 if isinstance(raw_step, dict) and raw_step.get("say"):
                     quick_audio_futures[idx] = pool.submit(synthesize, raw_step["say"])
-        for idx, raw_step in enumerate(raw_steps[:8]):
+        for idx, raw_step in enumerate(raw_steps[:planned_steps]):
             step = prepare_step(raw_step, idx, quick_audio_futures.get(idx))
             if not step:
                 continue
@@ -2049,48 +2076,6 @@ def run_turn(audio_path, typed_text, board_snapshot, history, profile,
             said.append(step["say"])
             n_steps += 1
             yield {"type": "step", "step": step}
-        if deep_future is not None:
-            yield {"type": "status", "status": "thinking",
-                   "detail": f"{MODEL_ID} is preparing the deeper whiteboard chapter…"}
-            try:
-                deep_text = deep_future.result(timeout=360)
-                deep_steps = extract_lesson_steps(deep_text)
-                print(f"[tutori] {MODEL_ID} deeper chapter: {len(deep_steps)} raw steps, "
-                      f"{len(deep_text)} chars", flush=True)
-                deep_audio_futures = {}
-                if pool:
-                    for deep_idx, raw_step in enumerate(deep_steps):
-                        if isinstance(raw_step, dict) and raw_step.get("say"):
-                            deep_audio_futures[deep_idx] = pool.submit(
-                                synthesize, raw_step["say"]
-                            )
-                for deep_idx, raw_step in enumerate(deep_steps):
-                    if n_steps >= 24:
-                        break
-                    raw_step = dict(raw_step) if isinstance(raw_step, dict) else raw_step
-                    if deep_idx == 0 and isinstance(raw_step, dict):
-                        raw_board = list(raw_step.get("board") or [])
-                        if not any(isinstance(op, dict) and op.get("op") == "clear"
-                                   for op in raw_board):
-                            raw_step["board"] = [{"op": "clear"}] + raw_board
-                    # Indices 0-7 are reserved for trusted quick templates.
-                    # Starting the deeper chapter at 8 lets the model use its own
-                    # coordinates after the explicit chapter clear.
-                    step = prepare_step(
-                        raw_step, 8 + deep_idx, deep_audio_futures.get(deep_idx)
-                    )
-                    if not step:
-                        continue
-                    said.append(step["say"])
-                    n_steps += 1
-                    yield {"type": "step", "step": step}
-            except Exception as exc:
-                # The learner already received a complete quick lesson. A deep
-                # model hiccup should not turn that successful turn into an error.
-                print(f"[tutori] {MODEL_ID} deeper chapter unavailable: {exc!r}", flush=True)
-            finally:
-                if generation_pool:
-                    generation_pool.shutdown(wait=False)
         if pool:
             pool.shutdown(wait=False)
 
@@ -2106,8 +2091,7 @@ def run_turn(audio_path, typed_text, board_snapshot, history, profile,
     except Exception as e:  # noqa: BLE001
         import traceback
         traceback.print_exc()
-        yield {"type": "final", "text": "",
-               "error": f"Something went wrong on my side: {type(e).__name__}. Try once more?"}
+        yield {"type": "final", "text": "", "error": _friendly_generation_error(e)}
 
 
 def tts_only(text):
@@ -2118,6 +2102,6 @@ def tts_only(text):
 MODELS_INFO = {
     "model": MODEL_ID,
     "llm": MODEL_ID, "coach": MODEL_ID, "vision": MODEL_ID,
-    "tts": TTS_ID, "asr": ASR_ID,
+    "tts": TTS_ID, "tts_provider": TTS_PROVIDER, "tts_voice_id": TTS_VOICE_ID, "asr": ASR_ID,
     "mode": "openai_api",
 }

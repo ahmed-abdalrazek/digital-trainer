@@ -1,3 +1,4 @@
 gradio==5.50.0
 requests>=2.32,<3
 ddgs>=9,<10
+truststore>=0.10,<1

@@ -37,7 +37,8 @@
     scale: 1, offX: 0, offY: 0,
     opSeedCounter: 1,
     voiceOn: true,
-    keepBoardUntil: 0, serverDone: false,
+    lessonSlides: false, lessonSlideIndex: 0, lessonSlideTotal: 0,
+    keepBoardUntil: 0, serverDone: false, completionText: "انتهى الشرح ✓", lectureCompleted: false,
     scrollTid: 0,
   };
 
@@ -140,8 +141,62 @@
     return segs;
   }
 
+  function drawArabicText(ctx, rnd, fullStr, at, size, colorValue, frac, align, fitW, fitH) {
+    if (frac <= 0) return;
+    const [x, y] = px(at);
+    let fontSize = fontPx(size);
+    const maxW = (fitW || (size === "xl" ? 88 : 52)) * S.scale;
+    const font = () => `600 ${fontSize}px Tahoma, Arial, sans-serif`;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate((rnd() - 0.5) * 0.012);
+    ctx.direction = "rtl";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = colorValue;
+    ctx.globalAlpha = Math.min(1, Math.max(0.12, frac));
+
+    const wrap = () => {
+      ctx.font = font();
+      const lines = [];
+      let line = "";
+      for (const word of fullStr.trim().split(/\s+/)) {
+        const candidate = line ? `${line} ${word}` : word;
+        if (line && ctx.measureText(candidate).width > maxW) {
+          lines.push(line);
+          line = word;
+        } else line = candidate;
+      }
+      if (line) lines.push(line);
+      return lines;
+    };
+
+    ctx.font = font();
+    const naturalWidth = ctx.measureText(fullStr.replace(/\^/g, "")).width;
+    if (fitW && naturalWidth > maxW) {
+      fontSize = Math.max(9, fontSize * maxW / naturalWidth);
+    }
+    let lines = wrap();
+    if (fitH && lines.length > 1) {
+      const availableH = fitH * S.scale;
+      const neededH = fontSize * (1 + (lines.length - 1) * 1.2);
+      if (neededH > availableH) {
+        fontSize = Math.max(8, fontSize * availableH / neededH);
+        lines = wrap();
+      }
+    }
+    ctx.font = font();
+    ctx.textAlign = align === "center" ? "center" : align === "right" ? "right" : "left";
+    const lineHeight = fontSize * 1.2;
+    lines.forEach((line, index) => ctx.fillText(line, 0, index * lineHeight, maxW));
+    ctx.restore();
+  }
+
   function drawText(ctx, rnd, text, at, size, color, frac, align, fitW, fitH) {
     const fullStr = String(text);
+    if (/[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff]/.test(fullStr)) {
+      drawArabicText(ctx, rnd, fullStr, at, size, color, frac, align, fitW, fitH);
+      return;
+    }
     const visibleLen = fullStr.replace(/\^/g, "").length;
     let budget = Math.ceil(visibleLen * Math.min(1, frac));
     if (budget <= 0) return;
@@ -251,10 +306,10 @@
     try {
       switch (o.op) {
         case "title": {
-          drawText(ctx, rnd, o.text, [50, 7], "xl", color(o.color || "ink"), frac, "center", 86, 7.2);
+          drawText(ctx, rnd, o.text, [50, 6.5], "xl", color(o.color || "ink"), frac, "center", 86, 7.2);
           if (frac > 0.75) {
             const tw = Math.min(70, String(o.text).length * 1.9);
-            drawLine(ctx, rnd, [50 - tw / 2, 12], [50 + tw / 2, 12],
+            drawLine(ctx, rnd, [50 - tw / 2, 15], [50 + tw / 2, 15],
               color(o.color || "ink"), (frac - 0.75) / 0.25, lw(0.5));
           }
           break;
@@ -552,13 +607,16 @@
       if (dy > 3.6) continue;
       ctx.save();
       const bpx = fontPx(t.size || "m");
-      ctx.font = `600 ${bpx}px Caveat, "Comic Sans MS", cursive`;
+      const arabic = /[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff]/.test(t.text);
+      ctx.font = arabic ? `600 ${bpx}px Tahoma, Arial, sans-serif`
+                        : `600 ${bpx}px Caveat, "Comic Sans MS", cursive`;
       const spaceW = ctx.measureText(" ").width;
       let wpx = 0;
       const wordsArr = String(t.text).split(" ");
       wordsArr.forEach((word, wi) => {
         for (const seg of parseSupers(word)) {
-          ctx.font = `600 ${(seg.sup ? 0.62 : 1) * bpx}px Caveat, "Comic Sans MS", cursive`;
+          ctx.font = arabic ? `600 ${(seg.sup ? 0.62 : 1) * bpx}px Tahoma, Arial, sans-serif`
+                            : `600 ${(seg.sup ? 0.62 : 1) * bpx}px Caveat, "Comic Sans MS", cursive`;
           wpx += ctx.measureText(seg.t).width;
         }
         if (wi < wordsArr.length - 1) wpx += spaceW;
@@ -635,18 +693,35 @@
     return arr.buffer;
   }
 
+  function loadStepAudio(step) {
+    if (step._bufP) return step._bufP;
+    if (step.audio_url) {
+      step._bufP = fetch(step.audio_url, { cache: "force-cache" })
+        .then(response => {
+          if (!response.ok) throw new Error(`audio request failed (${response.status})`);
+          return response.arrayBuffer();
+        })
+        .then(buffer => actx().decodeAudioData(buffer))
+        .catch(error => { console.warn("[tutori] saved lesson audio failed", error); return null; });
+    } else if (step.audio) {
+      try { step._bufP = actx().decodeAudioData(b64ToBuf(step.audio)).catch(() => null); }
+      catch (error) { step._bufP = Promise.resolve(null); }
+    }
+    return step._bufP || Promise.resolve(null);
+  }
+
   // ---------- lesson playback ----------
   async function playStep(step) {
     const ops = (step.board || []).map(o => ({ op: o, seed: (S.opSeedCounter++ * 2654435761) >>> 0 }));
+    if (S.lessonSlides) renderLessonSlide(step);
     let dur = step.dur || Math.max(2.2, String(step.say || "").split(/\s+/).length * 0.36);
     let src = null;
     let audioEnded = true;   // true while there is no source; set false when one starts
 
-    if (step.audio && S.voiceOn) {
+    if ((step.audio || step.audio_url) && S.voiceOn) {
       try {
         // audio was pre-decoded the moment the step arrived (see enqueue)
-        const buf = step._bufP ? await step._bufP
-                               : await actx().decodeAudioData(b64ToBuf(step.audio));
+        const buf = await loadStepAudio(step);
         if (buf) {
           dur = buf.duration;
           src = actx().createBufferSource();
@@ -659,22 +734,26 @@
     }
 
     if (!src && S.voiceOn && step.say) {
-      setStatus("OpenAI speech unavailable · continuing with captions", "teaching");
+      setStatus("صوت الذكاء الاصطناعي غير متاح لهذا الجزء", "teaching");
     }
 
     await waitWhilePaused();
-    setCaption(step.say || "");
+    setCaption(S.lessonSlides ? "" : (step.say || ""));
 
     // Clear and targeted erase are agent actions, not drawable marks.
-    for (const item of ops) {
-      if (item.op.op === "clear") clearAgent();
-      if (item.op.op === "erase") eraseAgent(item.op.targets || [item.op.target]);
+    if (!S.lessonSlides) {
+      for (const item of ops) {
+        if (item.op.op === "clear") clearAgent();
+        if (item.op.op === "erase") eraseAgent(item.op.targets || [item.op.target]);
+      }
     }
-    const drawable = ops.filter(x => !["clear", "erase"].includes(x.op.op));
+    const drawable = S.lessonSlides ? [] : ops.filter(x => !["clear", "erase"].includes(x.op.op));
 
     const total = drawable.reduce((s, x) => s + opCost(x.op), 0) || 1;
     let t0 = 0;
-    const budget = Math.max(1.2, dur * 0.92);
+    // Keep canvas drawing brisk and independent of long narration clips.
+    // Speech continues while the complete visual is drawn in a few seconds.
+    const budget = Math.min(8, Math.max(2.5, drawable.length * 0.65));
     const sched = drawable.map(x => {
       const span = Math.max(0.22, (opCost(x.op) / total) * budget);
       const item = { ...x, start: t0, end: t0 + span };
@@ -709,8 +788,7 @@
         // wait for the audio's real `ended` event — clock estimates start the
         // next clip while this one's tail is still audible (voices overlap).
         // el > dur + 2 is only a safety net if `ended` never fires.
-        const audioDone = src ? (audioEnded || el > dur + 2.0)
-                              : el > dur;
+        const audioDone = src ? (audioEnded || el > dur + 2.0) : el > dur;
         if (bakedIdx >= sched.length && audioDone) {
           live.clearRect(0, 0, S.liveCv.width, S.liveCv.height);
           setTimeout(resolve, 140);   // natural breath between steps
@@ -731,11 +809,29 @@
     });
   }
 
+  function setHeaderStatus(text) {
+    const el = document.getElementById("tutori-live-status");
+    if (el) el.textContent = text;
+  }
+
+  function finishPlayback() {
+    setCaption("");
+    if (S.completionText.includes("المحاضرة")) {
+      S.lectureCompleted = true;
+      setHeaderStatus("✓ اكتملت المحاضرة");
+      updateLectureButton();
+    } else {
+      setHeaderStatus("● المحاضر جاهز");
+    }
+    setStatus(S.completionText || "انتهى الشرح ✓", "done");
+  }
+
   async function pump() {
     if (S.playing) return;
     if (S.stopFlag) { setTimeout(pump, 90); return; }  // wait out the stop window
     S.playing = true;
     setTalking(true);
+    setHeaderStatus("🔊 المحاضرة تعمل");
     while (S.queue.length) {
       if (S.stopFlag) break;
       const step = S.queue.shift();
@@ -745,8 +841,8 @@
     setTalking(false);
     if (S.queue.length) setTimeout(pump, 120);         // interrupted mid-queue: retry
     else {
-      setCaption("");
-      if (S.serverDone) setStatus("", "idle");
+      if (S.serverDone) finishPlayback();
+      else setCaption("");
     }
   }
 
@@ -765,6 +861,9 @@
       action.catch(() => {});
     }
     setStatus(S.paused ? "المحاضرة متوقفة مؤقتًا · يمكنك كتابة سؤال أو تسجيله" : "", S.paused ? "paused" : "idle");
+    setHeaderStatus(S.paused ? "⏸ المحاضرة متوقفة مؤقتًا" :
+      S.lectureCompleted ? "✓ اكتملت المحاضرة" :
+      S.lectureStarted ? "🔊 المحاضرة تعمل" : "● المحاضر جاهز");
     return S.paused;
   }
 
@@ -774,7 +873,8 @@
     const replay = document.getElementById("replay-btn");
     if (replay) replay.style.display = S.lectureStarted ? "block" : "none";
     if (button) {
-      button.textContent = !S.lectureStarted ? "ابدأ المحاضرة ←" :
+      button.textContent = S.lectureCompleted ? "✓ اكتملت المحاضرة · إعادة التشغيل" :
+        !S.lectureStarted ? "ابدأ المحاضرة ←" :
         S.paused ? "▶ استئناف المحاضرة" : "⏸ إيقاف مؤقت";
       button.setAttribute("aria-pressed", String(S.paused));
       button.classList.toggle("is-paused", S.paused);
@@ -785,8 +885,13 @@
   document.addEventListener("click", event => {
     const startButton = event.target.closest?.("#demo-start-lecture-btn button, button#demo-start-lecture-btn");
     if (!startButton) return;
+    if (S.lectureCompleted) {
+      S.lectureCompleted = false;
+      S.lectureStarted = false;
+    }
     if (!S.lectureStarted) {
       S.lectureStarted = true;
+      setHeaderStatus("⏳ جاري بدء المحاضرة");
       updateLectureButton();
       return;
     }
@@ -796,6 +901,8 @@
   }, true);
   window.tutoriResetLectureControls = () => {
     S.lectureStarted = false;
+    S.lectureCompleted = false;
+    setHeaderStatus("● المحاضر جاهز");
     if (S.paused) setPaused(false);
     else updateLectureButton();
   };
@@ -836,6 +943,7 @@
 
     if (p.turn && p.turn !== S.curTurn) {        // a new turn begins
       const isFirstTurn = !S.curTurn;
+      S.lectureCompleted = false;
       S.lectureStarted = true;
       updateLectureButton();
       if (S.paused && !isFirstTurn) setPaused(false);
@@ -845,6 +953,7 @@
       S.stopFlag = true;                          // fast-forward whatever is playing
       setTimeout(() => { S.stopFlag = false; }, 50);
       S.queue = [];
+      setLessonSlideMode(false);
       // Gradio may focus the transcript/input after submit, which scrolls the
       // board header out of view right as drawing begins. Keep the whole board
       // visible for the teaching part of the turn.
@@ -852,15 +961,18 @@
       requestAnimationFrame(keepBoardInView);
     }
     S.voiceOn = p.voice !== false;
+    if (p.completion_text) S.completionText = p.completion_text;
+    if (p.completion_text && p.completion_text.includes("المحاضرة") && (p.steps || []).length) {
+      setLessonSlideMode(true, p.lesson_total);
+    }
     // the agent asks for a bigger stage when the lesson is drawing-heavy
     if (p.big !== undefined) setBoardBig(!!p.big);
     if (p.status_detail !== undefined) setStatus(p.status_detail, p.status);
     for (const s of (p.steps || [])) {        // incremental: each step carries its index
       const idx = (s.i !== undefined) ? s.i : S.enqueued;
       if (idx >= S.enqueued) {
-        if (s.audio && S.voiceOn) {           // decode now, while earlier steps play
-          try { s._bufP = actx().decodeAudioData(b64ToBuf(s.audio)).catch(() => null); }
-          catch (e) { s._bufP = null; }
+        if ((s.audio || s.audio_url) && S.voiceOn) { // load audio without bloating the lesson payload
+          loadStepAudio(s);
         }
         S.queue.push(s);
         S.enqueued = idx + 1;
@@ -869,8 +981,10 @@
     if (S.queue.length) setTimeout(pump, 30);
     if (p.status === "done" || p.status === "error") {
       S.serverDone = p.status === "done";
-      if (p.status === "error" || (!S.playing && !S.queue.length)) {
-        setTimeout(() => setStatus("", "idle"), p.status === "error" ? 6000 : 500);
+      if (p.status === "error") {
+        setTimeout(() => setStatus("", "idle"), 6000);
+      } else if (!S.playing && !S.queue.length) {
+        finishPlayback();
       }
     }
   };
@@ -917,6 +1031,94 @@
     if (!el) return;
     el.textContent = text;
     el.classList.toggle("show", !!text);
+  }
+
+  function setLessonSlideMode(enabled, total = 0) {
+    S.lessonSlides = !!enabled;
+    S.lessonSlideTotal = Number(total) || S.lessonSlideTotal || 10;
+    const host = document.getElementById("tutori-board-mount");
+    if (host) host.classList.toggle("lesson-slides-active", S.lessonSlides);
+    if (!S.lessonSlides) {
+      S.lessonSlideIndex = 0;
+      const deck = document.getElementById("tutori-slide-deck");
+      if (deck) deck.replaceChildren();
+    }
+  }
+
+  function renderLessonSlide(step) {
+    const deck = document.getElementById("tutori-slide-deck");
+    if (!deck) return;
+    const ops = Array.isArray(step.board) ? step.board : [];
+    const title = ops.find(op => op.op === "title")?.text || "فكرة هذا الجزء";
+    const boxes = ops.filter(op => op.op === "box" && op.label);
+    const decision = ops.find(op => op.op === "polygon" && op.label);
+    const notes = ops.filter(op => op.op === "text" && op.text).map(op => op.text);
+    const colors = ["#2563eb", "#ea580c", "#15803d", "#7c3aed"];
+    const createNode = (op, i, extraClass = "") => {
+      const node = document.createElement("div");
+      node.className = `lesson-slide-node ${extraClass}${String(op.label || "").length > 25 ? " is-compact" : ""}`;
+      node.style.setProperty("--node-color", colors[i % colors.length]);
+      String(op.label || "").split(/\n+/).filter(Boolean).forEach(line => {
+        const span = document.createElement("span");
+        span.textContent = line;
+        node.appendChild(span);
+      });
+      return node;
+    };
+
+    S.lessonSlideIndex += 1;
+    const total = Math.max(S.lessonSlideTotal, S.lessonSlideIndex);
+    const header = document.createElement("header");
+    header.className = "lesson-slide-header";
+    const meta = document.createElement("div");
+    meta.className = "lesson-slide-meta";
+    meta.textContent = `المحاضرة التعليمية · الجزء ${S.lessonSlideIndex} من ${total}`;
+    const heading = document.createElement("h2");
+    heading.textContent = title;
+    const progress = document.createElement("div");
+    progress.className = "lesson-slide-progress";
+    const bar = document.createElement("span");
+    bar.style.width = `${Math.min(100, S.lessonSlideIndex / total * 100)}%`;
+    progress.appendChild(bar);
+    header.append(meta, heading, progress);
+
+    const diagram = document.createElement("section");
+    diagram.className = `lesson-slide-diagram${decision ? " has-decision" : ""}`;
+    diagram.setAttribute("aria-label", "الرسم التوضيحي للجزء");
+    if (decision) diagram.appendChild(createNode(decision, 1, "lesson-slide-diamond"));
+    const flow = document.createElement("div");
+    flow.className = `lesson-slide-flow${decision ? " lesson-slide-branches" : ""}`;
+    const ordered = [...boxes].sort((a, b) => (b.at?.[0] || 0) - (a.at?.[0] || 0));
+    ordered.forEach((op, i) => {
+      if (i && !decision) {
+        const arrow = document.createElement("span");
+        arrow.className = "lesson-slide-arrow";
+        arrow.setAttribute("aria-hidden", "true");
+        arrow.textContent = "←";
+        flow.appendChild(arrow);
+      }
+      flow.appendChild(createNode(op, i));
+    });
+    if (!ordered.length) {
+      const fallback = document.createElement("p");
+      fallback.className = "lesson-slide-fallback";
+      fallback.textContent = notes[0] || String(step.say || "").split(/[.!؟]/)[0];
+      flow.appendChild(fallback);
+    }
+    diagram.appendChild(flow);
+
+    const note = document.createElement("p");
+    note.className = "lesson-slide-note";
+    note.textContent = notes[0] || (decision ? "تأمل مساري القرار، ثم استمع لنتيجة كل مسار." : "اتبع الفكرة من اليمين إلى اليسار.");
+    const narration = document.createElement("div");
+    narration.className = "lesson-slide-narration";
+    const label = document.createElement("span");
+    label.className = "lesson-slide-narration-label";
+    label.textContent = "الشرح الصوتي";
+    const words = document.createElement("p");
+    words.textContent = step.say || "";
+    narration.append(label, words);
+    deck.replaceChildren(header, diagram, note, narration);
   }
 
   function setStatus(text, mode) {
@@ -1012,6 +1214,7 @@
     host.innerHTML = `
       <div class="board-shell">
         <div class="board-toolbar" id="tutori-toolbar">${toolbarHTML()}</div>
+        <div class="lesson-slide-deck" id="tutori-slide-deck" dir="rtl" aria-live="polite"></div>
         <div class="board-wrap" id="tutori-wrap">
           <canvas id="cv-agent"></canvas>
           <canvas id="cv-live"></canvas>

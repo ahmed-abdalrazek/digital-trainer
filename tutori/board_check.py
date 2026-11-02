@@ -13,10 +13,12 @@ import ast
 import json
 import random
 import re as _re
+from pathlib import Path
 
 
-def load_engine_ns(path="engine.py"):
-    with open(path) as f:
+def load_engine_ns(path=None):
+    path = Path(path) if path else Path(__file__).with_name("engine.py")
+    with open(path, encoding="utf-8") as f:
         tree = ast.parse(f.read())
     ns = {"re": _re}
     names = {"_clamp_pt", "_op_bbox", "_overlaps", "_free_spot", "_overlap_area",

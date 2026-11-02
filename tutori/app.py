@@ -1,10 +1,8 @@
 """
-Tutori — your personal whiteboard tutor.
+Tutori lesson room and saved introductory-programming lesson.
 
-Speak (or type) a question. Tutori listens, gathers whatever context it needs,
-then teaches you out loud while sketching the idea on a whiteboard in real
-time. The Gradio edition uses the OpenAI API directly for lesson generation,
-transcription, and speech. API usage is billed separately from ChatGPT plans.
+Students play the teacher-approved saved lesson; follow-up questions use the
+separate OpenAI-powered tutor when an API key is configured.
 """
 
 import base64
@@ -17,8 +15,13 @@ from pathlib import Path
 
 import gradio as gr
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
+import lesson_store
+from lesson_store import WorkflowError
 
 # The API engine is the default everywhere; mock mode is explicit for offline UI work.
 if os.environ.get("TUTORI_MOCK") != "1":
@@ -83,32 +86,23 @@ HEADER_HTML = """
     <svg class="squiggle" viewBox="0 0 320 14" preserveAspectRatio="none" aria-hidden="true">
       <path d="M4 9 Q 44 2, 84 8 T 164 8 T 244 9 T 316 6"/>
     </svg>
-    <div class="tag">الشبكات 101 · كيف تنتقل البيانات عبر شبكة الحاسب؟</div>
+    <div class="tag">أساسيات البرمجة · من فهم المشكلة إلى بناء الخوارزمية · ٥ دقائق</div>
   </div>
-  <span class="live-student-tag">● المحاضر جاهز</span>
+  <span class="live-student-tag" id="tutori-live-status">● المحاضر جاهز</span>
 </div>
 """
 
 CHIPS = [
-    "اشرح إرسال رسالة من الجوال عبر Wi-Fi خطوة بخطوة",
-    "ما الفرق بين عنوان IP وعنوان MAC؟",
-    "كيف يختار الموجّه المسار المناسب للبيانات؟",
-    "اختبر فهمي بسؤال عن حزم البيانات",
+    "ما الفرق بين مدخلات المسألة ومخرجاتها؟",
+    "اكتب خطوات خوارزمية حساب متوسط ثلاث درجات",
+    "ماذا يحدث إذا كان المتوسط يساوي 60 بالضبط؟",
+    "اختبر فهمي بسؤال عن مخطط التدفق",
 ]
-
-START_LECTURE_PROMPT = (
-    "قدّم محاضرة تفاعلية واحدة بالعربية الفصحى المبسطة لمتدرب مبتدئ "
-    "في مقرر الشبكات 101 بعنوان: كيف تنتقل البيانات عبر شبكة الحاسب؟ "
-    "اشرح أدوار المرسل ووسيط النقل والمستقبل، وتتبع مثال إرسال رسالة "
-    "من هاتف عبر Wi-Fi إلى خادم ويب. ارسم مخططًا واضحًا على السبورة، "
-    "وقسّم الشرح إلى خطوات قصيرة، ثم اختم بسؤال واحد للتحقق من الفهم. "
-    "لا تبحث في الإنترنت؛ هذا شرح تعليمي لمفهوم أساسي."
-)
 
 EMPTY_PROFILE = {}
 
 
-def _payload(turn_id, voice_on, status, detail, steps):
+def _payload(turn_id, voice_on, status, detail, steps, completion_text="", lesson_total=0):
     # CUMULATIVE: every payload carries all steps so far (browser dedupes by
     # "i"). Gradio coalesces fast generator yields into latest-state — an
     # incremental protocol silently loses steps when that happens.
@@ -120,6 +114,8 @@ def _payload(turn_id, voice_on, status, detail, steps):
         "voice": bool(voice_on),
         "status": status,
         "status_detail": detail,
+        "completion_text": completion_text,
+        "lesson_total": int(lesson_total or 0),
         "big": bool(n_ops >= 9 or heavy >= 4),
         "steps": steps,
     })
@@ -143,7 +139,7 @@ N_CHIPS = len(CHIPS)
 
 def run_turn(audio_path, typed_text, snapshot, chat, convo, profile,
              notes, board_ops, pace, lesson_minutes, web_on, voice_on,
-             prepared=False):
+             prepared=False, saved_lesson=None, workflow_error=None):
     """Bridges ENGINE.run_turn events into streaming Gradio updates."""
     chat = list(chat or [])
     convo = list(convo or [])
@@ -152,7 +148,7 @@ def run_turn(audio_path, typed_text, snapshot, chat, convo, profile,
     board_ops = list(board_ops or [])
     turn_id = uuid.uuid4().hex[:10]
 
-    has_input = bool(audio_path or (typed_text or "").strip() or snapshot)
+    has_input = bool(saved_lesson or workflow_error or audio_path or (typed_text or "").strip() or snapshot)
     if not has_input:
         yield (gr.update(), chat, convo, profile, profile, notes, board_ops,
                gr.update(), gr.update(),
@@ -163,7 +159,7 @@ def run_turn(audio_path, typed_text, snapshot, chat, convo, profile,
     if not prepared:
         chat.append({"role": "user", "content": user_label})
         chat.append({"role": "assistant", "content": "✏️ *composing the first clean panel…*"})
-    question_for_context = user_label
+    question_for_context = (saved_lesson or {}).get("title") or user_label
     says = []
     sent_steps = []
     chip_vals = None  # set when the study coach suggests follow-ups
@@ -178,7 +174,9 @@ def run_turn(audio_path, typed_text, snapshot, chat, convo, profile,
         else:
             chips = [gr.update()] * n
             states = [gr.update()] * n
-        return (_payload(turn_id, voice_on, status, detail, sent_steps),
+        completion_text = "اكتملت المحاضرة ✓" if saved_lesson else "انتهى الشرح ✓"
+        lesson_total = len((saved_lesson or {}).get("steps") or [])
+        return (_payload(turn_id, voice_on, status, detail, sent_steps, completion_text, lesson_total),
                 chat, convo, profile, profile, notes, board_ops,
                 gr.update(value=None), gr.update(value=""),
                 *chips, *states)
@@ -189,8 +187,18 @@ def run_turn(audio_path, typed_text, snapshot, chat, convo, profile,
     error = None
     print(f"[tutori] turn {turn_id}: starting engine", flush=True)
     try:
-        for ev in ENGINE.run_turn(audio_path, typed_text, snapshot, convo, profile,
-                                  notes, board_ops, pace, lesson_minutes, web_on, voice_on):
+        if workflow_error:
+            events = [{"type": "final", "error": workflow_error}]
+        elif saved_lesson:
+            events = [{"type": "status", "status": "teaching",
+                       "detail": f"تشغيل النسخة المعتمدة {saved_lesson['version']}…"}]
+            events.extend({"type": "step", "step": step} for step in saved_lesson["steps"])
+            events.append({"type": "final", "text": " ".join(s["say"] for s in saved_lesson["steps"]),
+                           "error": None, "question": saved_lesson["title"]})
+        else:
+            events = ENGINE.run_turn(audio_path, typed_text, snapshot, convo, profile,
+                                     notes, board_ops, pace, lesson_minutes, web_on, voice_on)
+        for ev in events:
             kind = ev.get("type")
             if seq == 0 and kind != "step":
                 print(f"[tutori] turn {turn_id}: event {kind}", flush=True)
@@ -237,6 +245,8 @@ def run_turn(audio_path, typed_text, snapshot, chat, convo, profile,
         return
 
     final_text = " ".join(s for s in says if s).strip() or chat[-1]["content"]
+    if saved_lesson:
+        final_text += "\n\n✅ اكتملت المحاضرة."
     chat[-1]["content"] = "✏️ " + final_text
     convo.append({"role": "user", "content": question_for_context})
     convo.append({"role": "assistant", "content": final_text[:1200]})
@@ -272,14 +282,20 @@ def prepare_text_turn(typed_text, snapshot, chat):
 
 
 def prepare_demo_lecture(snapshot, chat):
-    return _prepare_request(
-        chat, typed_text=START_LECTURE_PROMPT, snapshot=snapshot
+    lesson = lesson_store.get_published_steps()
+    chat, request, clear_text = _prepare_request(
+        chat, typed_text=(lesson or {}).get("title", "تشغيل المحاضرة"), snapshot=""
     )
+    if lesson:
+        request["saved_lesson"] = lesson
+    else:
+        request["workflow_error"] = "المحاضرة الجديدة ما زالت مسودة. راجع أجزائها واعتمدها وانشرها من الداشبورد أولًا."
+    return chat, request, clear_text
 
 
 def prepare_replay_lecture(chat, convo, board_ops):
-    # Replay from a clean conversation and whiteboard, using the same starter lesson.
-    fresh_chat, request, _ = _prepare_request([], typed_text=START_LECTURE_PROMPT)
+    # Replay the published snapshot. Replaying never calls the lesson generator.
+    fresh_chat, request, _ = prepare_demo_lecture("", [])
     return fresh_chat, request, "", [], [], ""
 
 
@@ -305,6 +321,8 @@ def run_prepared_turn(request, chat, convo, profile, notes, board_ops,
         request.get("audio_path"), request.get("typed_text", ""),
         request.get("snapshot", ""), chat, convo, profile, notes, board_ops,
         pace, lesson_minutes, web_on, voice_on, prepared=True,
+        saved_lesson=request.get("saved_lesson"),
+        workflow_error=request.get("workflow_error"),
     ):
         # The full renderer also returns mic/text/chip controls. Never make
         # those outputs of a long-running event: Gradio marks outputs pending,
@@ -342,23 +360,183 @@ def _save_tts_preview(audio_b64):
         return output.name
 
 
-def compare_tts_voices():
-    """Generate the same brief Arabic preview with each supported voice."""
-    phrase = (
-        "عندما ترسل رسالة عبر شبكة واي فاي، تُقسَّم البيانات إلى حزم صغيرة. "
-        "ينقلها الموجّه إلى وجهتها، ثم يعيد الجهاز المستقبل ترتيبها."
+def _save_lesson_audio(audio_b64):
+    if not audio_b64:
+        raise RuntimeError("لم يصل ملف صوت من خدمة الذكاء الاصطناعي. راجع مفتاح API واتصال الخدمة.")
+    audio = base64.b64decode(audio_b64)
+    suffix = ".wav" if audio.startswith(b"RIFF") else ".mp3"
+    folder = ROOT / "data" / "audio"
+    folder.mkdir(parents=True, exist_ok=True)
+    destination = folder / f"lesson-{uuid.uuid4().hex}{suffix}"
+    destination.write_bytes(audio)
+    return str(destination), len(audio)
+
+
+def _generate_lesson_audio(text):
+    synthesize = getattr(ENGINE, "synthesize", None)
+    if not callable(synthesize) or not os.environ.get("ELEVENLABS_API_KEY", "").strip():
+        raise RuntimeError("أضف ELEVENLABS_API_KEY إلى إعدادات تشغيل Tutori لتوليد الصوت.")
+    audio_b64, duration = synthesize(str(text or "")[:4000])
+    if not audio_b64:
+        reason = str(getattr(ENGINE, "_TTS_BLOCK_REASON", ""))
+        if "paid_plan_required" in reason:
+            raise RuntimeError(
+                "حساب ElevenLabs الحالي مجاني، ولا يسمح باستخدام هذا الصوت عبر API. "
+                "فعّل خطة مدفوعة أو أضف رصيد API، ثم أعد توليد الصوت."
+            )
+        if "401" in reason or "invalid_api_key" in reason.lower():
+            raise RuntimeError("مفتاح ELEVENLABS_API_KEY غير صالح أو غير مفعّل.")
+        if "429" in reason or "quota" in reason.lower():
+            raise RuntimeError("رصيد أو حد استخدام ElevenLabs غير كافٍ لتوليد الصوت.")
+        if "403" in reason or "paid_plan_required" in reason:
+            raise RuntimeError("ElevenLabs رفض الوصول لهذا الصوت أو النموذج. تحقق من صلاحية الصوت لخطة API.")
+        if "404" in reason:
+            raise RuntimeError("معرّف صوت ElevenLabs غير موجود أو غير متاح لهذا المفتاح.")
+        if "422" in reason:
+            raise RuntimeError("ElevenLabs رفض إعدادات الطلب أو النص. راجع النموذج ومعرّف الصوت.")
+        if "CERTIFICATE_VERIFY_FAILED" in reason or "SSLCertVerificationError" in reason:
+            raise RuntimeError("تعذر التحقق الآمن من شهادة اتصال ElevenLabs. حدّث حزم Python وشهادات النظام.")
+        if reason:
+            raise RuntimeError(f"تعذر توليد الصوت: {reason[:180]}")
+        raise RuntimeError("تعذر توليد صوت ElevenLabs. لم تُرجع الخدمة تفاصيل إضافية.")
+    audio_path, _size = _save_lesson_audio(audio_b64)
+    return audio_path, float(duration or 0), "elevenlabs"
+
+
+def _generate_lesson_board(title, explanation):
+    """Ask the configured OpenAI model for a clear, lesson-specific board diagram."""
+    chat = getattr(ENGINE, "openai_chat", None)
+    if not callable(chat):
+        raise RuntimeError("محرك الذكاء الاصطناعي غير متاح لتجهيز رسم السبورة.")
+    prompt = (
+        "أنشئ مخطط سبورة تعليميًا واضحًا يشرح هذا المقطع فقط. "
+        "استخدم العربية الفصحى أو العربية السعودية، واجعل العبارات قصيرة ودقيقة. "
+        "أعد JSON فقط بالشكل {\"board\":[...]} دون Markdown. "
+        "العمليات المسموحة: clear، title، text، box، arrow، polygon. "
+        "ابدأ بـ clear ثم title واحد. ارسم فكرة واحدة واضحة باستخدام 3 أو 4 عقد كبيرة فقط. "
+        "اكتب داخل العقد كلمات مفتاحية قصيرة (سطر أو سطران، 4 كلمات كحد أقصى)، لا تنسخ الشرح كاملًا. "
+        "اجعل تسلسل القراءة من اليمين إلى اليسار، مع أسهم قصيرة وواضحة لا تمر فوق النصوص. "
+        "استخدم الأزرق للمدخلات، والبرتقالي للمعالجة أو القرار، والأخضر للنتيجة، والأحمر لمسار لا فقط. "
+        "اجعل العناوين والعقد ضمن y من 18 إلى 64 واترك فراغًا حولها. "
+        "إحداثيات x من 0 إلى 100 وy من 0 إلى 75. text يحتاج at:[x,y]. "
+        "box يحتاج at:[x,y], w من 18 إلى 38, h من 10 إلى 18, label. "
+        "لا تجعل العقد متداخلة أو ملتصقة. arrow يحتاج from:[x,y] وto:[x,y] وطوله بين 5 و35. "
+        "للسؤال نعم/لا استخدم polygon بأربع نقاط بشكل معين وlabel قصير، ثم ارسم فرعين واضحين." 
+        "استخدم text إضافيًا واحدًا فقط إذا كان يضيف ملاحظة تعليمية ضرورية. لا تزخرف ولا تكرر العنوان. "
+        "العنوان: " + str(title) + "\nنص الشرح: " + str(explanation)
     )
-    previews = []
-    for voice in ("marin", "cedar"):
-        audio_b64, _duration = ENGINE.synthesize(phrase, voice=voice)
-        previews.append(_save_tts_preview(audio_b64))
-    if not any(previews):
-        return None, None, "تعذّر إنشاء المعاينة. راجع مفتاح OpenAI API وسجلّ التشغيل."
-    return (*previews, "اسمع نفس الجملة بالصوتين، ثم اختر الصوت الذي تفضّله للمحاضرات.")
+    system = "أنت مصمم سبورات تعليمية دقيقة، ومهمتك تحويل شرح عربي إلى مخطط بسيط. لا تُرجع board فارغة أبدًا."
+    last_error = ""
+    for attempt in range(2):
+        try:
+            raw = chat(
+                [{"role": "system", "content": system},
+                 {"role": "user", "content": prompt + ("\nالمحاولة السابقة لم تنجح: " + last_error + ". أعد JSON كاملًا وفيه 4 عمليات رسم على الأقل." if last_error else "")}],
+                model=getattr(ENGINE, "MODEL_ID", "gpt-6-luna"), max_tokens=1100,
+                temperature=0.2, json_mode=True, reasoning="low", timeout=90,
+            )
+            parsed = json.loads(raw)
+            candidate = parsed if isinstance(parsed, list) else parsed.get("board", parsed.get("operations", []))
+            board_json = json.dumps(candidate, ensure_ascii=False)
+            operations = lesson_store.validate_board(board_json)
+            if len(operations) < 4 or operations[0].get("op") != "clear":
+                raise WorkflowError("الرسم فارغ أو ناقص")
+            return json.dumps(operations, ensure_ascii=False)
+        except (TypeError, AttributeError, json.JSONDecodeError, WorkflowError) as exc:
+            last_error = str(exc) or "تنسيق الرسم غير صالح"
+
+    # Keep approval usable if the model returns an empty or malformed diagram twice.
+    # The narration's own sentences become a simple, valid sequence of board cards.
+    phrases = [part.strip(" \t،؛:—-–") for part in re.split(r"[.!؟؛\n]+", str(explanation))]
+    phrases = [part for part in phrases if len(part.split()) >= 3]
+    if len(phrases) < 3:
+        phrases = [part.strip() for part in re.split(r"[،,]+", str(explanation)) if len(part.split()) >= 3]
+    phrases = (phrases + [str(explanation).strip()])[:4]
+    operations = [{"op": "clear"}, {"op": "title", "text": str(title)[:80]}]
+    ys = [8, 24, 40, 56]
+    for index, phrase in enumerate(phrases):
+        label = phrase[:34].rstrip(" ،؛:…")
+        operations.append({"op": "box", "at": [30, ys[index]], "w": 40, "h": 9, "label": label})
+        if index < len(phrases) - 1:
+            operations.append({"op": "arrow", "from": [50, ys[index] + 9], "to": [50, ys[index + 1]]})
+    return json.dumps(lesson_store.validate_board(json.dumps(operations, ensure_ascii=False)), ensure_ascii=False)
 
 
-def set_tts_voice(voice):
-    return ENGINE.set_tts_voice(voice)
+def _preparation_outputs(message=""):
+    workflow = lesson_store.get_workflow()
+    sections = workflow["sections"]
+    index = workflow["current_index"]
+    count = len(sections)
+    if workflow["state"] == "published":
+        status = f"✅ نُشرت النسخة {workflow['published_version']} من «{workflow['title']}». تشغيل الطلاب يعيد هذه النسخة المحفوظة."
+        title, explanation, board = "المحاضرة منشورة", "", "[]"
+        can_review = can_publish = False
+    elif index < count:
+        section = sections[index]
+        state_label = "بانتظار المراجعة" if section["status"] == "review" else "أُعيد للمراجعة"
+        status = f"الحالة: {state_label} · الجزء {index + 1} من {count}. يفتح الاعتماد الجزء الذي يليه فقط."
+        title = f"### {section['title']}\n\nهدف التعلم: {section['objective']}"
+        explanation, board = section["explanation"], section["board_ops"]
+        can_review, can_publish = True, False
+    else:
+        status = f"✅ اعتُمدت جميع الأجزاء ({count}). راجع النسخة ثم انشرها للطلاب صراحةً."
+        title, explanation, board = "مراجعة نهائية قبل النشر", "", "[]"
+        can_review, can_publish = False, True
+    if message:
+        status = message + "\n\n" + status
+    published = lesson_store.get_published_steps() is not None
+    return (
+        index, status, title, explanation, board,
+        gr.update(interactive=can_review), gr.update(interactive=can_review),
+        gr.update(interactive=can_publish), gr.update(interactive=published),
+        gr.update(interactive=published),
+    )
+
+
+def _approve_demo_section(index, explanation, board_json):
+    try:
+        lesson_store.approve_current(index, explanation, board_json)
+        return _preparation_outputs("حُفظ اعتماد الجزء، وانتقلت المراجعة للجزء التالي.")
+    except WorkflowError as exc:
+        result = list(_preparation_outputs(str(exc)))
+        result[3], result[4] = explanation, board_json
+        return result
+
+
+def _reject_demo_section(index, explanation, board_json):
+    try:
+        lesson_store.reject_current(index)
+        result = list(_preparation_outputs("أُعيد الجزء للتعديل؛ بقيت المراجعة عند الجزء نفسه."))
+        result[3], result[4] = explanation, board_json
+        return result
+    except WorkflowError as exc:
+        result = list(_preparation_outputs(str(exc)))
+        result[3], result[4] = explanation, board_json
+        return result
+
+
+def _publish_demo_lesson(index):
+    try:
+        lesson_store.publish(index)
+        return _preparation_outputs("نُشرت النسخة المعتمدة. تشغيل الدرس الآن يستخدم المحتوى المحفوظ دون توليد.")
+    except WorkflowError as exc:
+        return _preparation_outputs(str(exc))
+
+
+def _preview_demo_section(explanation, board_json):
+    try:
+        operations = lesson_store.validate_board(board_json)
+        step = {"i": 0, "say": str(explanation or "معاينة الرسم"),
+                "board": operations, "audio": None, "dur": 4.0}
+        return _payload(uuid.uuid4().hex[:10], False, "done", "معاينة عمليات السبورة الفعلية", [step])
+    except WorkflowError as exc:
+        return _payload(uuid.uuid4().hex[:10], False, "error", str(exc), [])
+
+
+def _published_button_updates():
+    """Keep an already-open classroom tab in sync with dashboard publication."""
+    published = lesson_store.get_published_steps() is not None
+    return gr.update(interactive=published), gr.update(interactive=published)
 
 
 with gr.Blocks(
@@ -377,6 +555,7 @@ with gr.Blocks(
     board_state = gr.State([])     # ops currently on the board (server mirror)
     pending_state = gr.State({})   # acknowledged request waiting for the model queue
     coach_state = gr.State(CHIPS)  # updates chips separately so they never stay locked
+    initial_preparation = lesson_store.get_workflow()
 
     payload_box = gr.Textbox(
         visible=True, elem_id="tutori-payload", elem_classes="payload-sink",
@@ -387,11 +566,19 @@ with gr.Blocks(
     with gr.Row(elem_classes="demo-lecture-cta"):
         gr.HTML(HEADER_HTML, elem_id="tutori-header-shell")
         start_lecture_btn = gr.Button(
-            "ابدأ المحاضرة ←", variant="primary", elem_id="demo-start-lecture-btn"
+            "ابدأ النسخة المنشورة ←", variant="primary", elem_id="demo-start-lecture-btn",
+            interactive=lesson_store.get_published_steps() is not None,
         )
         replay_btn = gr.Button(
-            "↻ إعادة من البداية", elem_id="replay-btn", size="sm"
+            "↻ إعادة النسخة المنشورة", elem_id="replay-btn", size="sm",
+            interactive=lesson_store.get_published_steps() is not None,
         )
+    publish_state_timer = gr.Timer(value=3, active=True)
+    publish_state_timer.tick(
+        fn=_published_button_updates,
+        outputs=[start_lecture_btn, replay_btn],
+        show_progress="hidden",
+    )
 
     with gr.Row(equal_height=False, elem_classes="studio-row"):
         # ---------------- whiteboard ----------------
@@ -401,6 +588,11 @@ with gr.Blocks(
                 gr.HTML(
                     '<div id="mode-banner">🧪 <b>وضع تجريبي</b> — المحرك الحقيقي غير مفعّل. '
                     "أضف OPENAI_API_KEY لتشغيل المحاضرة بالذكاء الاصطناعي.</div>"
+                )
+            elif not os.environ.get("OPENAI_API_KEY", "").strip():
+                gr.HTML(
+                    '<div id="mode-banner">⚠️ <b>الدرس المنشور يعمل دون توليد</b> — '
+                    "إجابات الأسئلة التفاعلية تحتاج إعداد OPENAI_API_KEY ثم إعادة تشغيل Tutori.</div>"
                 )
 
         # ---------------- conversation ----------------
@@ -436,8 +628,8 @@ with gr.Blocks(
                     info="١ = مبتدئ وخطوات مبسطة · ٥ = شرح سريع ومتقدم",
                 )
                 lesson_minutes = gr.Slider(
-                    1, 10, value=3, step=1, label="مدة المحاضرة بالدقائق",
-                    info="ثلاث دقائق افتراضيًا؛ ويمكن اختيار مدة من دقيقة إلى عشر دقائق.",
+                    1, 5, value=5, step=1, label="مدة المحاضرة بالدقائق",
+                    info="المدة الافتراضية خمس دقائق؛ والحد الأقصى خمس دقائق.",
                 )
                 web_on = gr.Checkbox(False, label="🔎 البحث على الإنترنت عند الحاجة")
                 voice_on = gr.Checkbox(
@@ -445,41 +637,10 @@ with gr.Blocks(
                     label="🔊 تشغيل الردود الصوتية",
                 )
                 if hasattr(ENGINE, "set_tts_voice"):
-                    voice_choice = gr.Radio(
-                        choices=[("Marin", "marin"), ("Cedar", "cedar")],
-                        value=getattr(ENGINE, "TTS_VOICE", "marin"),
-                        label="صوت المحاضر",
-                        info=("اختر الصوت بعد الاستماع إلى معاينة الجملة العربية نفسها. "
-                              "المقارنة ترسل طلبَي صوت إلى OpenAI API."),
+                    gr.Markdown(
+                        "🔊 صوت المحاضرة من ElevenLabs. أضف `ELEVENLABS_API_KEY` إلى بيئة التشغيل. "
+                        f"معرّف الصوت: `{getattr(ENGINE, 'TTS_VOICE_ID', '')}`."
                     )
-                    compare_voices_btn = gr.Button(
-                        "▶ قارن Marin وCedar بالعربية", size="sm"
-                    )
-                    with gr.Row():
-                        marin_preview = gr.Audio(
-                            label="Marin", type="filepath", interactive=False,
-                            show_download_button=False,
-                        )
-                        cedar_preview = gr.Audio(
-                            label="Cedar", type="filepath", interactive=False,
-                            show_download_button=False,
-                        )
-                    compare_status = gr.Markdown()
-                    voice_choice.change(
-                        fn=set_tts_voice,
-                        inputs=voice_choice,
-                        outputs=voice_choice,
-                        queue=False,
-                        show_progress="hidden",
-                    )
-                    compare_voices_btn.click(
-                        fn=compare_tts_voices,
-                        inputs=None,
-                        outputs=[marin_preview, cedar_preview, compare_status],
-                        queue=True,
-                        show_progress="minimal",
-                    )
-
             with gr.Accordion("🧠 ملف المتعلم", open=False):
                 gr.Markdown(
                     "يمكن للمدرب تذكّر مستواك وأهدافك وما أتقنته. تُحفظ هذه الملاحظات "
@@ -615,6 +776,105 @@ if __name__ == "__main__":
     # metadata. Gradio 5 otherwise emits two conflicting sets of placeholder
     # Open Graph tags, and many link unfurlers choose the first one.
     web = FastAPI(title="Tutori")
+    web.add_middleware(
+        CORSMiddleware, allow_origin_regex=r"https?://([a-zA-Z0-9-]+\.test|localhost|127\.0\.0\.1)(:\d+)?",
+        allow_methods=["GET", "POST", "OPTIONS"], allow_headers=["Content-Type"],
+    )
+
+    @web.get("/admin", response_class=HTMLResponse)
+    async def admin_dashboard():
+        dashboard = (ROOT.parent / "index.html").read_text(encoding="utf-8")
+        dashboard = dashboard.replace('href="assets/', 'href="/dashboard-assets/')
+        dashboard = dashboard.replace('src="assets/', 'src="/dashboard-assets/')
+        return HTMLResponse(dashboard, headers={"Cache-Control": "no-store"})
+
+    web.mount("/dashboard-assets", StaticFiles(directory=str(ROOT.parent / "assets")), name="dashboard-assets")
+
+    @web.get("/api/lesson-preparation")
+    async def lesson_preparation_state():
+        state = lesson_store.get_workflow()
+        published = lesson_store.get_published_steps()
+        state["ai_audio_ready"] = bool(published and published.get("voice"))
+        state["ai_audio_provider"] = published.get("provider") if published else None
+        return state
+
+    @web.get("/api/lesson-preparation/audio/{position}")
+    async def lesson_preparation_audio_file(position: int):
+        version, sections = lesson_store.get_published_sections()
+        if not version:
+            return JSONResponse({"error": "لا توجد نسخة منشورة."}, status_code=404)
+        section = next((item for item in sections if int(item["position"]) == position), None)
+        audio_path = Path(section["audio_path"]) if section and section.get("audio_path") else None
+        if not audio_path or not audio_path.is_file():
+            return JSONResponse({"error": "ملف الصوت لهذا الجزء غير موجود."}, status_code=404)
+        media_type = "audio/wav" if audio_path.suffix.lower() == ".wav" else "audio/mpeg"
+        return FileResponse(audio_path, media_type=media_type,
+                            headers={"Cache-Control": "private, max-age=3600"})
+
+    @web.post("/api/lesson-preparation/approve")
+    async def lesson_preparation_approve(request: Request):
+        try:
+            data = await request.json()
+            workflow = lesson_store.get_workflow()
+            if int(data.get("expected_index")) != int(workflow["current_index"]):
+                raise WorkflowError("تغير الجزء الحالي. حدّث الشاشة ثم أعد المحاولة.")
+            explanation = str(data.get("explanation") or "").strip()
+            if not explanation:
+                raise WorkflowError("أدخل الشرح قبل اعتماد الجزء.")
+            section = workflow["sections"][workflow["current_index"]]
+            audio_path, audio_duration, audio_provider = await run_in_threadpool(
+                _generate_lesson_audio, explanation
+            )
+            try:
+                board_json = await run_in_threadpool(
+                    _generate_lesson_board, section["title"], explanation
+                )
+                return lesson_store.approve_current(
+                    data.get("expected_index"), explanation, board_json,
+                    audio_path=audio_path, audio_duration=audio_duration, audio_provider=audio_provider,
+                )
+            except Exception:
+                Path(audio_path).unlink(missing_ok=True)
+                raise
+        except (WorkflowError, TypeError, ValueError, RuntimeError) as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+
+    @web.post("/api/lesson-preparation/audio")
+    async def lesson_preparation_audio():
+        try:
+            version, sections = lesson_store.get_published_sections()
+            if not version:
+                raise WorkflowError("انشر المحاضرة أولًا ثم أنشئ ملفاتها الصوتية.")
+            missing = [section for section in sections
+                       if section.get("audio_provider") != "elevenlabs"
+                       or not section.get("audio_path")
+                       or not Path(section["audio_path"]).is_file()]
+            if not missing:
+                return {"ready": True, "message": "الصوت الذكي جاهز بالفعل."}
+            audio = {}
+            for section in missing:
+                audio[section["position"]] = _generate_lesson_audio(section["explanation"])
+            lesson_store.save_published_audio(version, audio)
+            return {"ready": True, "message": "تم توليد صوت ElevenLabs وحفظه للنسخة المنشورة."}
+        except (WorkflowError, TypeError, ValueError, RuntimeError) as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+
+    @web.post("/api/lesson-preparation/reject")
+    async def lesson_preparation_reject(request: Request):
+        try:
+            data = await request.json()
+            return lesson_store.reject_current(data.get("expected_index"))
+        except (WorkflowError, TypeError, ValueError) as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+
+    @web.post("/api/lesson-preparation/publish")
+    async def lesson_preparation_publish(request: Request):
+        try:
+            data = await request.json()
+            return lesson_store.publish(data.get("expected_index"))
+        except (WorkflowError, TypeError, ValueError) as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+
     web.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
 
     @web.middleware("http")

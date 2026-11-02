@@ -57,11 +57,11 @@ through OpenRouter:
 - `gpt-6-luna` (low reasoning) for every agentic, teaching, coaching,
   memory, and whiteboard-vision role
 - `gpt-transcribe` for microphone transcription
-- `gpt-4o-mini-tts` for spoken lesson audio
+- ElevenLabs Multilingual v2 and the configured voice ID for spoken lesson audio
 
-These are **API** requests and are billed separately from ChatGPT Go or other
-ChatGPT subscriptions. The TTS model supports Arabic, though its built-in voices
-are optimized for English.
+OpenAI and ElevenLabs are separate API services and are billed separately from
+ChatGPT subscriptions. ElevenLabs Multilingual v2 supports Arabic; choose a voice
+with the desired accent.
 
 The hosted edition defaults to a three-minute lesson and supports 1–10 minute
 continuous sessions, agent-controlled clear and targeted erase actions,
@@ -111,20 +111,34 @@ explains the Codex workflow and GPT-5.6 integration. The exact narration is in
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-export OPENAI_API_KEY="your-key"
+export OPENAI_API_KEY="your-openai-key"
+export ELEVENLABS_API_KEY="your-elevenlabs-key"
 python app.py
 ```
 
-On PowerShell, set the key with `$env:OPENAI_API_KEY="your-key"` before running
-`python app.py`. Then open `http://127.0.0.1:7860`. Do not commit the key. For
+On Windows you can copy `.env.example` to `.env` and fill in both keys, or set
+`OPENAI_API_KEY` and `ELEVENLABS_API_KEY` in the process environment. Restart
+Tutori after changing either key. Open `http://127.0.0.1:7860`. Never commit `.env`. For
 the local mock UI, set `TUTORI_MOCK=1` and install `numpy` and `soundfile` too.
 Create the key and configure API billing in the [OpenAI API platform](https://platform.openai.com/);
-ChatGPT Go does not include API requests. The defaults are configurable with
-`OPENAI_MODEL`, `OPENAI_ASR_MODEL`, `OPENAI_TTS_MODEL`, and `OPENAI_TTS_VOICE`.
-In the lesson settings, choose the `marin` or `cedar` voice and generate a
-short Arabic comparison preview. Each preview comparison makes two billed
-OpenAI API speech requests; the selected voice is used for upcoming lesson
-steps in the current app process.
+ChatGPT Go does not include API requests. Speech is generated with the ElevenLabs `eleven_multilingual_v2` model and voice
+`5HAezIQAaoSgJypcI0NP` by default. Override these with `ELEVENLABS_MODEL_ID`
+and `ELEVENLABS_VOICE_ID`. `ELEVENLABS_API_KEY` is required for lesson narration;
+`OPENAI_API_KEY` remains required for the tutor model and transcription.
+
+### Saved lesson example
+
+Open the Tutori lesson-preparation page in the main dashboard. The current
+programming example is a five-minute introduction to problem analysis,
+algorithms, and flowcharts based on slides 20–33 of the supplied syllabus.
+Review and approve its five sections in order, then explicitly publish it.
+The workflow and published snapshots are stored locally in
+`data/lesson_preparation.sqlite3`; student playback uses the saved section text,
+board diagrams, and ElevenLabs audio without calling the lesson model. Follow-up
+questions use the separate AI tutor and still require a working API key.
+
+Run the workflow, renderer, and turn-pipeline checks from this directory with
+`python -m unittest discover -p 'test_*.py'`.
 
 Licensed under Apache-2.0. See [`LICENSE`](./LICENSE).
 
