@@ -73,6 +73,9 @@ SOCIAL_META = f"""
 """
 
 HEAD = f"""
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet" />
 <style>{FONT_FACES}</style>
 <script>{BOARD_JS}</script>
 """
@@ -80,12 +83,11 @@ HEAD = f"""
 HEADER_HTML = """
 <div id="tutori-header">
   <div class="head-left">
-    <div class="logo"><span class="mark">✏️</span> المدرب الرقمي
-      <span class="sub">قاعة المحاضرة التفاعلية</span>
+    <!-- same brand block as the platform sidebar (index.html) -->
+    <div class="tutori-brand">
+      <div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" width="30" height="30" fill="currentColor"><path d="M12 4L1.5 9 12 14l8.5-4v5.5h1.5V9z"/><path d="M5.5 12.6V16c0 1.9 2.9 3.5 6.5 3.5s6.5-1.6 6.5-3.5v-3.4L12 15.7z"/></svg></div>
+      <div><strong>المدرب الرقمي</strong><small>منصة تعليمية تفاعلية مع مدرب ذكي بالذكاء الاصطناعي</small></div>
     </div>
-    <svg class="squiggle" viewBox="0 0 320 14" preserveAspectRatio="none" aria-hidden="true">
-      <path d="M4 9 Q 44 2, 84 8 T 164 8 T 244 9 T 316 6"/>
-    </svg>
     <div class="tag">أساسيات البرمجة · من فهم المشكلة إلى بناء الخوارزمية · ٥ دقائق</div>
   </div>
   <span class="live-student-tag" id="tutori-live-status">● المحاضر جاهز</span>
@@ -100,6 +102,39 @@ CHIPS = [
 ]
 
 EMPTY_PROFILE = {}
+
+
+def _icon(path, size=20):
+    return (f'<svg viewBox="0 0 24 24" width="{size}" height="{size}" fill="none" '
+            'stroke="currentColor" stroke-width="1.9" stroke-linecap="round" '
+            f'stroke-linejoin="round" aria-hidden="true">{path}</svg>')
+
+
+ICON_CHAT = _icon('<path d="M5 18l-1.5 3 4-1.5A8.5 8.5 0 1 0 5 18z"/><path d="M8.5 11h.01M12 11h.01M15.5 11h.01"/>')
+ICON_DOC = _icon('<path d="M7 3.5h7l4 4V20a.5.5 0 0 1-.5.5h-10A.5.5 0 0 1 7 20z"/><path d="M14 3.5V8h4"/><path d="M9.5 12h5M9.5 15.5h5"/>')
+ICON_MIC = _icon('<rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v3.5"/>')
+ICON_INFO = _icon('<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 8h.01"/>', 16)
+ICON_SPARK = _icon('<path d="M12 4l1.6 4.4L18 10l-4.4 1.6L12 16l-1.6-4.4L6 10l4.4-1.6z"/><path d="M18.5 15.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z"/>', 24)
+ICON_STAR = _icon('<path d="M12 4l2.4 5 5.4.7-4 3.7 1 5.4L12 16.3 7.2 18.8l1-5.4-4-3.7 5.4-.7z"/>', 24)
+ICON_USERS = _icon('<circle cx="9" cy="8.5" r="3"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><circle cx="16.5" cy="9.5" r="2.5"/><path d="M15.5 14.2a4.5 4.5 0 0 1 5 4.8"/>', 24)
+ICON_DOWNLOAD = _icon('<path d="M12 4v11M7.5 10.5L12 15l4.5-4.5"/><path d="M5 19.5h14"/>', 24)
+
+# Four lecture actions under the log. Each one does something real:
+# the first two ask the tutor (through the normal question path), the
+# share tile copies the classroom link and export downloads the log.
+ACTION_TILES_HTML = f"""
+<div class="action-tiles" role="group" aria-label="أدوات المحاضرة">
+  <button type="button" class="action-tile tile-amber" data-ask="استخرج النقاط الرئيسية من المحاضرة حتى الآن في قائمة قصيرة.">{ICON_SPARK}<span>استخراج النقاط الرئيسية</span></button>
+  <button type="button" class="action-tile tile-rose" data-ask="لخّص المحاضرة حتى الآن في ملخص قصير وواضح.">{ICON_STAR}<span>توليد ملخص المحاضرة</span></button>
+  <button type="button" class="action-tile tile-sky" data-action="share">{ICON_USERS}<span>مشاركة الرابط مع المتدربين</span></button>
+  <button type="button" class="action-tile tile-mint" data-action="export">{ICON_DOWNLOAD}<span>تصدير المحتوى (Word)</span></button>
+</div>
+"""
+
+LOG_EMPTY_HTML = f"""
+<div class="log-empty">{ICON_DOC.replace('width="20" height="20"', 'width="44" height="44"')}
+<strong>لا توجد ملاحظات بعد</strong><span>ستظهر هنا ملاحظات المحاضرة والأسئلة المهمة.</span></div>
+"""
 
 
 def _payload(turn_id, voice_on, status, detail, steps, completion_text="", lesson_total=0):
@@ -135,6 +170,9 @@ def _track_board(board_ops, step_board):
 
 
 N_CHIPS = len(CHIPS)
+# chat placeholder while the answer is being prepared (also used to spot an
+# unanswered turn that a newer question interrupts)
+PENDING_REPLY = "✏️ *يجهّز المدرب الإجابة…*"
 
 
 def run_turn(audio_path, typed_text, snapshot, chat, convo, profile,
@@ -155,10 +193,10 @@ def run_turn(audio_path, typed_text, snapshot, chat, convo, profile,
                *([gr.update()] * (2 * N_CHIPS)))
         return
 
-    user_label = (typed_text or "").strip() or ("🎙️ …" if audio_path else "🖼️ (my whiteboard)")
+    user_label = (typed_text or "").strip() or ("🎙️ …" if audio_path else "🖼️ (رسمي على السبورة)")
     if not prepared:
         chat.append({"role": "user", "content": user_label})
-        chat.append({"role": "assistant", "content": "✏️ *composing the first clean panel…*"})
+        chat.append({"role": "assistant", "content": PENDING_REPLY})
     question_for_context = (saved_lesson or {}).get("title") or user_label
     says = []
     sent_steps = []
@@ -181,7 +219,7 @@ def run_turn(audio_path, typed_text, snapshot, chat, convo, profile,
                 gr.update(value=None), gr.update(value=""),
                 *chips, *states)
 
-    yield render(detail="Thinking…")
+    yield render(detail="يفكّر المدرب…")
 
     seq = 0
     error = None
@@ -207,7 +245,7 @@ def run_turn(audio_path, typed_text, snapshot, chat, convo, profile,
             elif kind == "transcript":
                 question_for_context = ev["text"]
                 chat[-2]["content"] = f"🎙️ {ev['text']}"
-                yield render("thinking", "Heard you!")
+                yield render("thinking", "سمعت سؤالك ✓")
             elif kind == "research":
                 fresh = ev.get("notes", "")
                 if fresh:
@@ -218,7 +256,7 @@ def run_turn(audio_path, typed_text, snapshot, chat, convo, profile,
                 board_ops = _track_board(board_ops, step.get("board"))
                 chat[-1]["content"] = "✏️ " + " ".join(s for s in says if s)
                 sent_steps.append(step)
-                yield render("teaching", f"Teaching — step {seq + 1}")
+                yield render("teaching", f"يشرح المدرب · الخطوة {seq + 1}")
                 seq += 1
             elif kind == "memory":
                 profile = dict(ev.get("profile") or profile)
@@ -261,11 +299,11 @@ def _prepare_request(chat, *, typed_text="", audio_path=None, snapshot=""):
 
     chat = list(chat or [])
     if (chat and chat[-1].get("role") == "assistant" and
-            "composing the first clean panel" in str(chat[-1].get("content", ""))):
-        chat[-1] = {"role": "assistant", "content": "⏹️ *Interrupted by the new question.*"}
-    user_label = typed_text or ("🎙️ Listening…" if audio_path else "🖼️ (my whiteboard)")
+            chat[-1].get("content") == PENDING_REPLY):
+        chat[-1] = {"role": "assistant", "content": "⏹️ *توقّف الشرح من أجل سؤالك الجديد.*"}
+    user_label = typed_text or ("🎙️ سؤال صوتي…" if audio_path else "🖼️ (رسمي على السبورة)")
     chat.append({"role": "user", "content": user_label})
-    chat.append({"role": "assistant", "content": "✏️ *composing the first clean panel…*"})
+    chat.append({"role": "assistant", "content": PENDING_REPLY})
     request = {
         "request_id": uuid.uuid4().hex,
         "audio_path": audio_path,
@@ -307,6 +345,35 @@ def prepare_audio_turn(audio_path, snapshot, chat):
     return _prepare_request(chat, audio_path=audio_path, snapshot=snapshot)
 
 
+_VOICE_EXT = {"webm": ".webm", "ogg": ".ogg", "mp4": ".m4a", "mpeg": ".mp3",
+              "wav": ".wav", "x-wav": ".wav"}
+VOICE_DIR = ROOT / "data" / "voice_questions"
+
+
+def _voice_data_url_to_file(data_url):
+    """Save a recorded question (a `data:audio/...;base64,` URL sent by the
+    board.js recorder) to a file the transcriber can read."""
+    match = re.match(r"^data:audio/([\w.+-]+)(?:;[^,]*)?;base64,(.+)$", str(data_url or ""), re.S)
+    if not match:
+        return None
+    try:
+        raw = base64.b64decode(match.group(2), validate=False)
+    except (ValueError, TypeError):
+        return None
+    if len(raw) < 800 or len(raw) > 25 * 1024 * 1024:   # empty click / absurdly long
+        return None
+    VOICE_DIR.mkdir(parents=True, exist_ok=True)
+    path = VOICE_DIR / f"q-{uuid.uuid4().hex[:12]}{_VOICE_EXT.get(match.group(1).lower(), '.webm')}"
+    path.write_bytes(raw)
+    return str(path)
+
+
+def prepare_voice_turn(data_url, snapshot, chat):
+    chat_out, request, _ = _prepare_request(
+        chat, audio_path=_voice_data_url_to_file(data_url), snapshot=snapshot)
+    return chat_out, request, ""      # also empties the hidden carrier
+
+
 def prepare_board_turn(snapshot, chat):
     return _prepare_request(chat, snapshot=snapshot)
 
@@ -317,20 +384,26 @@ def run_prepared_turn(request, chat, convo, profile, notes, board_ops,
     request = dict(request or {})
     if not request:
         return
-    for update in run_turn(
-        request.get("audio_path"), request.get("typed_text", ""),
-        request.get("snapshot", ""), chat, convo, profile, notes, board_ops,
-        pace, lesson_minutes, web_on, voice_on, prepared=True,
-        saved_lesson=request.get("saved_lesson"),
-        workflow_error=request.get("workflow_error"),
-    ):
-        # The full renderer also returns mic/text/chip controls. Never make
-        # those outputs of a long-running event: Gradio marks outputs pending,
-        # which used to disable Enter, Send, and examples mid-generation.
-        coach_values = update[9 + N_CHIPS:9 + 2 * N_CHIPS]
-        coach = ([value for value in coach_values if isinstance(value, str)]
-                 or gr.update())
-        yield (*update[:7], coach)
+    audio_path = request.get("audio_path")
+    try:
+        for update in run_turn(
+            audio_path, request.get("typed_text", ""),
+            request.get("snapshot", ""), chat, convo, profile, notes, board_ops,
+            pace, lesson_minutes, web_on, voice_on, prepared=True,
+            saved_lesson=request.get("saved_lesson"),
+            workflow_error=request.get("workflow_error"),
+        ):
+            # The full renderer also returns mic/text/chip controls. Never make
+            # those outputs of a long-running event: Gradio marks outputs pending,
+            # which used to disable Enter, Send, and examples mid-generation.
+            coach_values = update[9 + N_CHIPS:9 + 2 * N_CHIPS]
+            coach = ([value for value in coach_values if isinstance(value, str)]
+                     or gr.update())
+            yield (*update[:7], coach)
+    finally:
+        # a learner's recorded voice is only needed for transcription
+        if audio_path and Path(audio_path).parent == VOICE_DIR:
+            Path(audio_path).unlink(missing_ok=True)
 
 
 def apply_coach_suggestions(suggestions):
@@ -410,18 +483,21 @@ def _generate_lesson_board(title, explanation):
         raise RuntimeError("محرك الذكاء الاصطناعي غير متاح لتجهيز رسم السبورة.")
     prompt = (
         "أنشئ مخطط سبورة تعليميًا واضحًا يشرح هذا المقطع فقط. "
-        "استخدم العربية الفصحى أو العربية السعودية، واجعل العبارات قصيرة ودقيقة. "
+        "استخدم في التسميات العربية الفصحى البسيطة والسليمة، وطابق معناها مع الشرح دون تغيير نصه أو لهجته. "
+        "احتفظ بالمصطلح التقني الأجنبي فقط عند الحاجة، ولا تكتب كلمات مبتورة أو ترجمة حرفية مربكة. "
         "أعد JSON فقط بالشكل {\"board\":[...]} دون Markdown. "
         "العمليات المسموحة: clear، title، text، box، arrow، polygon. "
-        "ابدأ بـ clear ثم title واحد. ارسم فكرة واحدة واضحة باستخدام 3 أو 4 عقد كبيرة فقط. "
+        "ابدأ بـ clear ثم title واحد قصير من كلمتين إلى خمس كلمات. ارسم فكرة واحدة واضحة باستخدام 3 أو 4 عقد كبيرة فقط. "
         "اكتب داخل العقد كلمات مفتاحية قصيرة (سطر أو سطران، 4 كلمات كحد أقصى)، لا تنسخ الشرح كاملًا. "
         "اجعل تسلسل القراءة من اليمين إلى اليسار، مع أسهم قصيرة وواضحة لا تمر فوق النصوص. "
+        "كل سهم يربط حافتي عقدتين واضحتين بعلاقة مذكورة في الشرح؛ لا أسهم زخرفية أو متجهة إلى فراغ. "
+        "أظهر مثالًا أو قيمًا محددة من الشرح عند وجودها، ولا تخترع أرقامًا أو نتائج غير مذكورة. "
         "استخدم الأزرق للمدخلات، والبرتقالي للمعالجة أو القرار، والأخضر للنتيجة، والأحمر لمسار لا فقط. "
-        "اجعل العناوين والعقد ضمن y من 18 إلى 64 واترك فراغًا حولها. "
+        "احجز المنطقة y<18 للعنوان فقط، واجعل بقية الرسم أسفلها وداخل حدود السبورة مع فراغ حول العناصر. "
         "إحداثيات x من 0 إلى 100 وy من 0 إلى 75. text يحتاج at:[x,y]. "
         "box يحتاج at:[x,y], w من 18 إلى 38, h من 10 إلى 18, label. "
         "لا تجعل العقد متداخلة أو ملتصقة. arrow يحتاج from:[x,y] وto:[x,y] وطوله بين 5 و35. "
-        "للسؤال نعم/لا استخدم polygon بأربع نقاط بشكل معين وlabel قصير، ثم ارسم فرعين واضحين." 
+        "للسؤال نعم/لا استخدم polygon بأربع نقاط بشكل معين وlabel قصير، ثم ارسم فرعين واضحين. "
         "استخدم text إضافيًا واحدًا فقط إذا كان يضيف ملاحظة تعليمية ضرورية. لا تزخرف ولا تكرر العنوان. "
         "العنوان: " + str(title) + "\nنص الشرح: " + str(explanation)
     )
@@ -446,19 +522,26 @@ def _generate_lesson_board(title, explanation):
             last_error = str(exc) or "تنسيق الرسم غير صالح"
 
     # Keep approval usable if the model returns an empty or malformed diagram twice.
-    # The narration's own sentences become a simple, valid sequence of board cards.
-    phrases = [part.strip(" \t،؛:—-–") for part in re.split(r"[.!؟؛\n]+", str(explanation))]
-    phrases = [part for part in phrases if len(part.split()) >= 3]
-    if len(phrases) < 3:
-        phrases = [part.strip() for part in re.split(r"[،,]+", str(explanation)) if len(part.split()) >= 3]
-    phrases = (phrases + [str(explanation).strip()])[:4]
-    operations = [{"op": "clear"}, {"op": "title", "text": str(title)[:80]}]
-    ys = [8, 24, 40, 56]
-    for index, phrase in enumerate(phrases):
-        label = phrase[:34].rstrip(" ،؛:…")
-        operations.append({"op": "box", "at": [30, ys[index]], "w": 40, "h": 9, "label": label})
+    # Extract only the narration's own words; never invent a replacement explanation.
+    phrases = []
+    for part in re.split(r"[!؟?؛;،\n]+|[.,](?!\d)", str(explanation or "")):
+        words = part.strip(" \t:—-–").split()[:4]
+        while words and len(" ".join(words)) > 34:
+            words.pop()
+        label = " ".join(words)
+        if label and label not in phrases:
+            phrases.append(label)
+        if len(phrases) == 4:
+            break
+    title_words = str(title or "").split()[:5]
+    while title_words and len(" ".join(title_words)) > 60:
+        title_words.pop()
+    operations = [{"op": "clear"}, {"op": "title", "text": " ".join(title_words) or "ملخص المقطع"}]
+    ys = [18, 33, 48, 63]
+    for index, label in enumerate(phrases):
+        operations.append({"op": "box", "at": [30, ys[index]], "w": 40, "h": 10, "label": label})
         if index < len(phrases) - 1:
-            operations.append({"op": "arrow", "from": [50, ys[index] + 9], "to": [50, ys[index + 1]]})
+            operations.append({"op": "arrow", "from": [50, ys[index] + 10], "to": [50, ys[index + 1]]})
     return json.dumps(lesson_store.validate_board(json.dumps(operations, ensure_ascii=False)), ensure_ascii=False)
 
 
@@ -566,7 +649,7 @@ with gr.Blocks(
     with gr.Row(elem_classes="demo-lecture-cta"):
         gr.HTML(HEADER_HTML, elem_id="tutori-header-shell")
         start_lecture_btn = gr.Button(
-            "ابدأ النسخة المنشورة ←", variant="primary", elem_id="demo-start-lecture-btn",
+            "ابدأ المحاضرة ▶", variant="primary", elem_id="demo-start-lecture-btn",
             interactive=lesson_store.get_published_steps() is not None,
         )
         replay_btn = gr.Button(
@@ -598,26 +681,52 @@ with gr.Blocks(
         # ---------------- conversation ----------------
         with gr.Column(scale=8, elem_classes="side-col"):
             with gr.Column(elem_classes="question-panel"):
-                gr.Markdown("**اسأل المدرب** · اكتب سؤالك أو سجّله بالصوت.")
-                with gr.Row(elem_classes="question-entry"):
+                gr.HTML(f'<div class="ask-head"><div class="ask-head-row">{ICON_CHAT}'
+                        '<span class="ask-title">اسأل المدرب</span></div>'
+                        '<span class="ask-sub">اكتب سؤالك وسيجيبك المدرب الرقمي فورًا</span></div>')
+                with gr.Group(elem_classes="ask-input"):
                     text_in = gr.Textbox(
                         value="",
                         placeholder="اكتب سؤالك هنا…",
-                        show_label=False, lines=3, max_lines=6, scale=5, container=False,
+                        show_label=False, lines=2, max_lines=6, container=False,
                         elem_id="lesson-question",
                     )
-                    send_btn = gr.Button("إرسال السؤال ←", variant="primary", scale=1, min_width=110, elem_id="send-btn")
-                mic = gr.Audio(
-                    sources=["microphone"], type="filepath", format="wav",
-                    label="🎤 تسجيل سؤال صوتي · أوقف التسجيل للإرسال",
-                    elem_id="mic-box", show_download_button=False,
+                    # the same recorder as «سجّل سؤالك», inside the box
+                    gr.HTML(f'<button type="button" class="ask-inline-mic" data-mic="1" '
+                            f'title="تسجيل سؤال صوتي" aria-label="تسجيل سؤال صوتي">{ICON_MIC}</button>',
+                            elem_classes="ask-inline-mic-wrap")
+                with gr.Row(elem_classes="ask-actions"):
+                    # A plain browser recorder (board.js) instead of gr.Audio:
+                    # it pauses the lecture the moment recording starts and
+                    # has an Arabic, one-button UI.
+                    gr.HTML(
+                        '<button type="button" id="tutori-mic" class="ask-mic" '
+                        'aria-label="تسجيل سؤال صوتي">'
+                        '<span class="ask-mic-dot" aria-hidden="true"></span>'
+                        '<span class="ask-mic-label">سجّل سؤالك</span></button>',
+                        elem_classes="ask-mic-wrap",
+                    )
+                    send_btn = gr.Button("إرسال", variant="primary", elem_id="send-btn",
+                                         icon=None)
+                gr.HTML(f'<div class="ask-hint">{ICON_INFO}<div id="tutori-ask-status" class="ask-status" '
+                        'aria-live="polite">يمكنك طرح الأسئلة صوتيًا أو كتابيًا، وسيقدّم المدرب شرحًا '
+                        'مبسطًا وموجزًا.</div></div>')
+                # hidden carriers for the recorded question (see board.js)
+                voice_in = gr.Textbox(visible=True, elem_id="tutori-voice-sink",
+                                      elem_classes="payload-sink", show_label=False,
+                                      container=False)
+                voice_btn = gr.Button("voice", elem_id="tutori-voice-send",
+                                      elem_classes="payload-sink")
+            with gr.Column(elem_classes="log-card"):
+                gr.HTML(f'<div class="log-head">{ICON_DOC}<span>سجل المحاضرة</span></div>')
+                chatbot = gr.Chatbot(
+                    type="messages", height=240, elem_id="tutori-chat",
+                    show_label=False, placeholder=LOG_EMPTY_HTML,
+                    avatar_images=(None, None),
+                    show_copy_button=False,
                 )
-            chatbot = gr.Chatbot(
-                type="messages", height=260, elem_id="tutori-chat",
-                label="سجل المحاضرة",
-                avatar_images=(None, None),
-                show_copy_button=False,
-            )
+            gr.HTML(ACTION_TILES_HTML)
+            gr.HTML('<div class="chip-head">أسئلة مقترحة من المدرب</div>')
             with gr.Row(elem_classes="chip-row"):
                 chip_btns = [gr.Button(c, size="sm") for c in CHIPS]
             chip_states = [gr.State(c) for c in CHIPS]
@@ -669,7 +778,7 @@ with gr.Blocks(
 
     turn_outputs = [
         payload_box, chatbot, convo_state, profile_state, profile_view,
-        notes_state, board_state, mic, text_in, *chip_btns, *chip_states,
+        notes_state, board_state, voice_in, text_in, *chip_btns, *chip_states,
     ]
 
     prepared_inputs = [
@@ -709,9 +818,9 @@ with gr.Blocks(
             js="(snap, chat) => [(window.tutoriSnapshotIfInk ? window.tutoriSnapshotIfInk() : ''), chat]",
             queue=False, show_progress="hidden", trigger_mode="always_last",
         ),
-        mic.stop_recording(
-            fn=prepare_audio_turn,
-            inputs=[mic, snap_box, chatbot], outputs=prepare_outputs,
+        voice_btn.click(
+            fn=prepare_voice_turn,
+            inputs=[voice_in, snap_box, chatbot], outputs=[chatbot, pending_state, voice_in],
             js="(audio, snap, chat) => [audio, (window.tutoriSnapshotIfInk ? window.tutoriSnapshotIfInk() : ''), chat]",
             queue=False, show_progress="hidden", trigger_mode="always_last",
         ),

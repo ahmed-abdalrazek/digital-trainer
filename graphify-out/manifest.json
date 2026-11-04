@@ -1,0 +1,302 @@
+{
+  "app.js": {
+    "mtime": 1792984865.4034925,
+    "seen": 1793770331.8620877,
+    "ast_hash": "3ff7c482943b29c1e923736b2fa502b6",
+    "semantic_hash": "3ff7c482943b29c1e923736b2fa502b6"
+  },
+  "assets/app.js": {
+    "mtime": 1793617195.2677727,
+    "seen": 1793770331.8620877,
+    "ast_hash": "5d4d6b0722925c0a8aeb1dc22ffef1a6",
+    "semantic_hash": "5d4d6b0722925c0a8aeb1dc22ffef1a6"
+  },
+  "assets/quality-workspace.js": {
+    "mtime": 1792798056.4780426,
+    "seen": 1793770331.8620877,
+    "ast_hash": "5add19c3c5956858f18b93030b6cb727",
+    "semantic_hash": "5add19c3c5956858f18b93030b6cb727"
+  },
+  "assets/role-switcher.js": {
+    "mtime": 1792763942.5225248,
+    "seen": 1793770331.8620877,
+    "ast_hash": "f6420fa023d959067b2f371e212740ea",
+    "semantic_hash": "f6420fa023d959067b2f371e212740ea"
+  },
+  "assets/saudi-map.js": {
+    "mtime": 1792762073.0342507,
+    "seen": 1793770331.8620877,
+    "ast_hash": "6f0b139146344e10497aad969e278b82",
+    "semantic_hash": "6f0b139146344e10497aad969e278b82"
+  },
+  "assets/student-platform.js": {
+    "mtime": 1793421938.9662943,
+    "seen": 1793770331.8620877,
+    "ast_hash": "3f5ed6e06965fbd1bf7adaa9c08f7226",
+    "semantic_hash": "3f5ed6e06965fbd1bf7adaa9c08f7226"
+  },
+  "start-phone-demo.ps1": {
+    "mtime": 1792798643.2137094,
+    "seen": 1793770331.8620877,
+    "ast_hash": "a943908abb2d67b57e328b13b065ed3e",
+    "semantic_hash": "a943908abb2d67b57e328b13b065ed3e"
+  },
+  "tutori/app.py": {
+    "mtime": 1793686637.861263,
+    "seen": 1793770331.8620877,
+    "ast_hash": "b9cf59eda0472c969738e5b327405f2b",
+    "semantic_hash": "b9cf59eda0472c969738e5b327405f2b"
+  },
+  "tutori/board_check.py": {
+    "mtime": 1793597086.9058373,
+    "seen": 1793770331.8620877,
+    "ast_hash": "51d1187bd027508d0a9b842f9fa4ec64",
+    "semantic_hash": "51d1187bd027508d0a9b842f9fa4ec64"
+  },
+  "tutori/board_model_prompt.py": {
+    "mtime": 1793686637.865788,
+    "seen": 1793770331.8620877,
+    "ast_hash": "5fec19fc1b3da68e55201f4d1481c15c",
+    "semantic_hash": "5fec19fc1b3da68e55201f4d1481c15c"
+  },
+  "tutori/board_quality.py": {
+    "mtime": 1793686637.8602645,
+    "seen": 1793770331.8620877,
+    "ast_hash": "8459c67a5c33a380b05b649d1731f356",
+    "semantic_hash": "8459c67a5c33a380b05b649d1731f356"
+  },
+  "tutori/engine.py": {
+    "mtime": 1793686637.8637798,
+    "seen": 1793770331.8620877,
+    "ast_hash": "46d5747cd31b51f1ea91edbbe461da26",
+    "semantic_hash": "46d5747cd31b51f1ea91edbbe461da26"
+  },
+  "tutori/lesson_store.py": {
+    "mtime": 1793614358.4258409,
+    "seen": 1793770331.8620877,
+    "ast_hash": "97f13cc46fdb42b8e15d4472cd4fde25",
+    "semantic_hash": "97f13cc46fdb42b8e15d4472cd4fde25"
+  },
+  "tutori/mock_engine.py": {
+    "mtime": 1793164645.154189,
+    "seen": 1793770331.8620877,
+    "ast_hash": "89bac80189ac0080d310925e2270411e",
+    "semantic_hash": "89bac80189ac0080d310925e2270411e"
+  },
+  "tutori/preparation_workflow.py": {
+    "mtime": 1793614367.0436342,
+    "seen": 1793770331.8620877,
+    "ast_hash": "818069597bad7afeafd9b6f31c618b5c",
+    "semantic_hash": "818069597bad7afeafd9b6f31c618b5c"
+  },
+  "tutori/static/board.js": {
+    "mtime": 1793684788.0409715,
+    "seen": 1793770331.8620877,
+    "ast_hash": "fc7124b7da23511870368ce5ab1a8ae1",
+    "semantic_hash": "fc7124b7da23511870368ce5ab1a8ae1"
+  },
+  "tutori/test_board_quality.py": {
+    "mtime": 1793164645.1892028,
+    "seen": 1793770331.8620877,
+    "ast_hash": "824b3e396b68921919eca5b13e5f3bc9",
+    "semantic_hash": "824b3e396b68921919eca5b13e5f3bc9"
+  },
+  "tutori/test_engine_turns.py": {
+    "mtime": 1793686577.3231275,
+    "seen": 1793770331.8620877,
+    "ast_hash": "7e2074d04d455b1aaf885a2007cb3fd0",
+    "semantic_hash": "7e2074d04d455b1aaf885a2007cb3fd0"
+  },
+  "tutori/test_generation_errors.py": {
+    "mtime": 1793597256.7407963,
+    "seen": 1793770331.8620877,
+    "ast_hash": "6552eaaa257f47f147fbbd5d5e525e36",
+    "semantic_hash": "6552eaaa257f47f147fbbd5d5e525e36"
+  },
+  "tutori/test_lesson_store.py": {
+    "mtime": 1793614123.6680293,
+    "seen": 1793770331.8620877,
+    "ast_hash": "c22a238049eddf6cb76403cc13aadc85",
+    "semantic_hash": "c22a238049eddf6cb76403cc13aadc85"
+  },
+  "tutori/test_preparation_workflow.py": {
+    "mtime": 1793686577.327297,
+    "seen": 1793770331.8620877,
+    "ast_hash": "74129ff9e532ce2309e2d55c9807486f",
+    "semantic_hash": "74129ff9e532ce2309e2d55c9807486f"
+  },
+  "tutori/traces/trace-gradient-descent.json": {
+    "mtime": 1793164645.19261,
+    "seen": 1793770331.8620877,
+    "ast_hash": "92b00c2454bc58dbb0c104aa8551e5a2",
+    "semantic_hash": "92b00c2454bc58dbb0c104aa8551e5a2"
+  },
+  "tutori/traces/trace-rockets-orbit.json": {
+    "mtime": 1793164645.1937547,
+    "seen": 1793770331.8620877,
+    "ast_hash": "69d3e995d87f1cd162e5802a68c75fb3",
+    "semantic_hash": "69d3e995d87f1cd162e5802a68c75fb3"
+  },
+  "tutori/traces/trace-space-exploration.json": {
+    "mtime": 1793164645.1950278,
+    "seen": 1793770331.8620877,
+    "ast_hash": "dd6117618bbf6e4564920806011b0977",
+    "semantic_hash": "dd6117618bbf6e4564920806011b0977"
+  },
+  "README.md": {
+    "mtime": 1793603186.1107304,
+    "seen": 1793770331.8620877,
+    "ast_hash": "9613658b8944add49de7a5a31c69cf59",
+    "semantic_hash": "9613658b8944add49de7a5a31c69cf59"
+  },
+  "docs/AGENTS.md": {
+    "mtime": 1792738520.0,
+    "seen": 1793770331.8620877,
+    "ast_hash": "83bfb5f5f61a3f7e048f68aa2c155e66",
+    "semantic_hash": "83bfb5f5f61a3f7e048f68aa2c155e66"
+  },
+  "docs/CODEX_START_PROMPT.txt": {
+    "mtime": 1792738520.0,
+    "seen": 1793770331.8620877,
+    "ast_hash": "fcf569e22d9723862a63d00329489611",
+    "semantic_hash": "fcf569e22d9723862a63d00329489611"
+  },
+  "docs/CODEX_TASKS.md": {
+    "mtime": 1792738520.0,
+    "seen": 1793770331.8620877,
+    "ast_hash": "50400df8c81bcf202f87d6afeb334f08",
+    "semantic_hash": "50400df8c81bcf202f87d6afeb334f08"
+  },
+  "docs/DEMO_LIMITATIONS.md": {
+    "mtime": 1793597072.2936537,
+    "seen": 1793770331.8620877,
+    "ast_hash": "cf7f447b18c33f9bd367e9b09439d83f",
+    "semantic_hash": "cf7f447b18c33f9bd367e9b09439d83f"
+  },
+  "docs/DESIGN_SPEC.md": {
+    "mtime": 1792738520.0,
+    "seen": 1793770331.8620877,
+    "ast_hash": "77a56db678c33f195ef8b1f0d809c12a",
+    "semantic_hash": "77a56db678c33f195ef8b1f0d809c12a"
+  },
+  "docs/PRD.md": {
+    "mtime": 1792738520.0,
+    "seen": 1793770331.8620877,
+    "ast_hash": "8abae802b849484f9238939c82fcedae",
+    "semantic_hash": "8abae802b849484f9238939c82fcedae"
+  },
+  "docs/PROJECT_AUDIT.md": {
+    "mtime": 1792992615.0744293,
+    "seen": 1793770331.8620877,
+    "ast_hash": "b853a126013278b526a0c5bcb9b31244",
+    "semantic_hash": "b853a126013278b526a0c5bcb9b31244"
+  },
+  "docs/PROJECT_CONTEXT.md": {
+    "mtime": 1793255402.9788609,
+    "seen": 1793770331.8620877,
+    "ast_hash": "729ea3f994a37b3e179702c9b0ba6d85",
+    "semantic_hash": "729ea3f994a37b3e179702c9b0ba6d85"
+  },
+  "docs/REQUIREMENTS_TRACEABILITY.md": {
+    "mtime": 1792797999.1467967,
+    "seen": 1793770331.8620877,
+    "ast_hash": "3d659cfff417134064a85557f08f5363",
+    "semantic_hash": "3d659cfff417134064a85557f08f5363"
+  },
+  "index.html": {
+    "mtime": 1793607349.6094372,
+    "seen": 1793770331.8620877,
+    "ast_hash": "63bad17e25e6cd9a2cd873177b36cc59",
+    "semantic_hash": "63bad17e25e6cd9a2cd873177b36cc59"
+  },
+  "legacy-admin-demo.html": {
+    "mtime": 1792799863.7714064,
+    "seen": 1793770331.8620877,
+    "ast_hash": "8b51348ce4a205b13a38ec26547c0f00",
+    "semantic_hash": "8b51348ce4a205b13a38ec26547c0f00"
+  },
+  "tutori/README.md": {
+    "mtime": 1793609357.9164727,
+    "seen": 1793770331.8620877,
+    "ast_hash": "14c48ea1541517839aca97d02def69dc",
+    "semantic_hash": "14c48ea1541517839aca97d02def69dc"
+  },
+  "tutori/docs/build-week-demo-script.txt": {
+    "mtime": 1793164645.124854,
+    "seen": 1793770331.8620877,
+    "ast_hash": "9719d1978e41df16c88d4cab7c490adb",
+    "semantic_hash": "9719d1978e41df16c88d4cab7c490adb"
+  },
+  "tutori/docs/field-notes.md": {
+    "mtime": 1793164645.1501887,
+    "seen": 1793770331.8620877,
+    "ast_hash": "886bd5492f2af647d06446a4a463427c",
+    "semantic_hash": "886bd5492f2af647d06446a4a463427c"
+  },
+  "tutori/packages.txt": {
+    "mtime": 1793164645.155192,
+    "seen": 1793770331.8620877,
+    "ast_hash": "15842bd85a5477d50f63bc8252f82c49",
+    "semantic_hash": "15842bd85a5477d50f63bc8252f82c49"
+  },
+  "tutori/requirements.txt": {
+    "mtime": 1793604160.984665,
+    "seen": 1793770331.8620877,
+    "ast_hash": "cd4667bc9e1368596885ebc60aec5511",
+    "semantic_hash": "cd4667bc9e1368596885ebc60aec5511"
+  },
+  "tutori/static/voice/belinda.txt": {
+    "mtime": 1793164645.1860058,
+    "seen": 1793770331.8620877,
+    "ast_hash": "1486c0705c4b7076fb4ac295110c8532",
+    "semantic_hash": "1486c0705c4b7076fb4ac295110c8532"
+  },
+  "tutori/traces/README.md": {
+    "mtime": 1793164645.1908762,
+    "seen": 1793770331.8620877,
+    "ast_hash": "8e15b962a13fc80f2fa1179341176529",
+    "semantic_hash": "8e15b962a13fc80f2fa1179341176529"
+  },
+  "tutori/docs/demo-assets/loss-current.png": {
+    "mtime": 1793164645.1461873,
+    "seen": 1793770331.8620877,
+    "ast_hash": "afb69fe8257bb78ce0f4aa32523d2cb6",
+    "semantic_hash": "afb69fe8257bb78ce0f4aa32523d2cb6"
+  },
+  "tutori/docs/demo-assets/sky-blue-current.jpg": {
+    "mtime": 1793164645.1491833,
+    "seen": 1793770331.8620877,
+    "ast_hash": "5073a6baaa89c75fd598931884a67322",
+    "semantic_hash": "5073a6baaa89c75fd598931884a67322"
+  },
+  "tutori/static/tutori-share.png": {
+    "mtime": 1793164645.1830046,
+    "seen": 1793770331.8620877,
+    "ast_hash": "1e2389c75eeec9c18640eda464ca48f9",
+    "semantic_hash": "1e2389c75eeec9c18640eda464ca48f9"
+  },
+  "tutori/static/tutori-share.svg": {
+    "mtime": 1793244941.4696465,
+    "seen": 1793770331.8620877,
+    "ast_hash": "d7f332dcd54a7f5e2e607acef34e7ba1",
+    "semantic_hash": "d7f332dcd54a7f5e2e607acef34e7ba1"
+  },
+  "tutori/Tutori_OpenAI_Build_Week_Demo.mp4": {
+    "mtime": 1793164654.169425,
+    "seen": 1793770331.8620877,
+    "ast_hash": "e6a4cc2d01f224b3e4bf4121d59fb1cc",
+    "semantic_hash": "e6a4cc2d01f224b3e4bf4121d59fb1cc"
+  },
+  "tutori/static/voice/belinda.wav": {
+    "mtime": 1793164651.5972743,
+    "seen": 1793770331.8620877,
+    "ast_hash": "430b28e94e70a441f9c46869eaa23be6",
+    "semantic_hash": "430b28e94e70a441f9c46869eaa23be6"
+  },
+  "tutori/tutori_demo.mp4": {
+    "mtime": 1793164657.5007517,
+    "seen": 1793770331.8620877,
+    "ast_hash": "02d7d2ea982a2899b413ab86f1b3ff77",
+    "semantic_hash": "02d7d2ea982a2899b413ab86f1b3ff77"
+  }
+}

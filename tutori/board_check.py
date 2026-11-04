@@ -24,12 +24,15 @@ def load_engine_ns(path=None):
     names = {"_clamp_pt", "_op_bbox", "_overlaps", "_free_spot", "_overlap_area",
              "_score", "_solid_area", "_shift_pt", "_fix_text", "_seg_samples", "layout_pass", "_op_sig",
              "_snap_endpoint_to_edge", "_stroke_len", "_cap_arrow", "_target_bboxes", "_near_any_box",
-             "_cap_callout", "dedup_ops", "_normalize_op", "_merge_text_groups", "sanitize_step"}
+             "_cap_callout", "dedup_ops", "_normalize_op", "_merge_text_groups", "sanitize_step",
+             "_is_arabic", "_char_em", "_str_w", "_text_metrics", "_text_box", "_notes_layout",
+             "_clip_words", "_move_callout_ring_to_shape_edge", "_stamp_text_box", "_pt_seg_dist", "_rebuild_layout"}
     nodes = [n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.Assign))
              and (getattr(n, "name", "") in names
                   or (isinstance(n, ast.Assign)
                       and getattr(n.targets[0], "id", "").startswith(
-                          ("_TEXT", "_LABEL", "_SHAPE", "_VALUE", "_OP_ALIAS", "_UESC"))))]
+                          ("_TEXT", "_LABEL", "_SHAPE", "_VALUE", "_OP_ALIAS", "_UESC",
+                           "_FONT", "_WRAP", "_NOTES", "_ARABIC", "_AR_EM"))))]
     exec(compile(ast.Module(body=nodes, type_ignores=[]), path, "exec"), ns)
     return ns
 
@@ -47,7 +50,7 @@ def render_bboxes(ns, ops):
                     out.append((k, str(op.get("text") or op.get("label")
                                        or op.get("title") or k)[:30], bb))
             if k in ("arrow", "dot") and op.get("label") and op.get("label_at"):
-                w = min(len(str(op["label"])) * 1.6, 30)
+                w = ns["_text_metrics"](op["label"], "s", 30.0, shrink=True)[0]
                 x, y = op["label_at"]
                 out.append((k + "-label", str(op["label"])[:30],
                             (x - w / 2, y - 2.5, x + w / 2, y + 2.5)))

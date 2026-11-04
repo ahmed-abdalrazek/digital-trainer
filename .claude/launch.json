@@ -1,0 +1,13 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "tutori",
+      "runtimeExecutable": "C:/laragon/www/digital-trainer/tutori/.venv/Scripts/python.exe",
+      "runtimeArgs": ["C:/laragon/www/digital-trainer/tutori/app.py"],
+      "cwd": "C:/laragon/www/digital-trainer/tutori",
+      "env": { "GRADIO_SERVER_NAME": "127.0.0.1", "PYTHONIOENCODING": "utf-8" },
+      "port": 7860
+    }
+  ]
+}

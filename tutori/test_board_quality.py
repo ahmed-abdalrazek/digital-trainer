@@ -208,5 +208,65 @@ class BoardQualityTests(unittest.TestCase):
                     self.assertGreater(((tx - fx) ** 2 + (ty - fy) ** 2) ** 0.5, 4)
 
 
+class ArabicBoardLayoutTests(unittest.TestCase):
+    """Arabic text is much wider than the old Latin-only estimate and wraps
+    onto extra lines; the layout must reserve that real footprint."""
+
+    LESSON = [
+        [{"op": "clear"}, {"op": "title", "text": "ما هي الخوارزمية؟"},
+         {"op": "text", "at": [8, 24],
+          "text": "الخوارزمية هي مجموعة خطوات مرتبة لحل مشكلة محددة"},
+         {"op": "text", "at": [8, 31],
+          "text": "مثال من الحياة اليومية: تحضير كوب من الشاي"}],
+        [{"op": "notes", "at": [56, 22], "title": "خطوات تحضير الشاي:",
+          "lines": ["١. اغلي الماء في الغلاية جيدًا",
+                    "٢. ضع كيس الشاي داخل الكوب",
+                    "٣. اسكب الماء الساخن فوق الكيس"]}],
+        [{"op": "box", "at": [6, 44], "w": 18, "h": 10, "label": "المدخلات"},
+         {"op": "arrow", "from": [24, 49], "to": [36, 49], "label": "ماء وشاي"},
+         {"op": "box", "at": [36, 44], "w": 20, "h": 10, "label": "المعالجة"},
+         {"op": "text", "at": [8, 62],
+          "text": "كل خوارزمية جيدة لها بداية واضحة ونهاية محددة"}],
+    ]
+
+    def test_long_arabic_text_reserves_its_wrapped_lines(self):
+        ns = load_engine_ns()
+        one = ns["_op_bbox"]({"op": "text", "at": [8, 24], "size": "s", "text": "مرحبا"})
+        long = ns["_op_bbox"]({"op": "text", "at": [8, 24], "size": "s",
+                               "text": "الخوارزمية هي مجموعة خطوات مرتبة لحل مشكلة محددة جدا"})
+        self.assertGreater(long[3] - long[1], 1.8 * (one[3] - one[1]))
+        self.assertAlmostEqual(long[1], one[1])   # extra lines grow downward
+
+    def test_arabic_lesson_has_no_text_overlaps(self):
+        ns = load_engine_ns()
+        violations, ops = simulate_lesson(ns, self.LESSON)
+        self.assertEqual(violations, [])
+        texts = [op for op in ops if op.get("op") == "text"]
+        self.assertTrue(all(op.get("wrap_w") and op.get("max_lines") for op in texts))
+
+    def test_later_steps_avoid_earlier_arrow_labels(self):
+        # run_turn rebuilds the occupied space from the ops already drawn;
+        # arrows and their labels must be part of it, or the next step's
+        # text lands on top of them
+        ns = load_engine_ns()
+        drawn = [{"op": "arrow", "from": [31, 31], "to": [31, 35],
+                  "label": "عمودية", "label_at": [24, 32.4]}]
+        placed, displaced, anchors, state = ns["_rebuild_layout"](drawn)
+        text = {"op": "text", "at": [18, 32], "size": "s",
+                "text": "على الطاولة: الوزن والعمودية متوازنان"}
+        out = ns["layout_pass"]([text], placed, displaced, anchors, state)
+        label_box = (24 - 5, 32.4 - 2.5, 24 + 5, 32.4 + 2.5)
+        self.assertTrue(out)
+        self.assertLess(ns["_overlap_area"](ns["_op_bbox"](out[0]), label_box), 1.0)
+
+    def test_notes_lines_are_never_cut_mid_word(self):
+        ns = load_engine_ns()
+        line = "٣. اسكب الماء الساخن فوق الكيس ثم انتظر خمس دقائق كاملة"
+        op = ns["_normalize_op"]({"op": "notes", "title": "خطوات", "lines": [line]})
+        kept = op["lines"][0]
+        self.assertTrue(line.startswith(kept))
+        self.assertIn(line[len(kept):len(kept) + 1], ("", " "))
+
+
 if __name__ == "__main__":
     unittest.main()

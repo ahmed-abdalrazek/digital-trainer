@@ -59,16 +59,18 @@ def diagram_family(question, say=""):
 def improve_step_board(question, step_index, say, board):
     """Return better board ops for a lesson step.
 
-    High-confidence diagram families replace the model's coordinates entirely.
+    English-only diagram families replace the model's coordinates when suitable.
     Everything else keeps the model output, with generic curve repair and an
     empty-step fallback.
     """
     board = [dict(op) for op in (board or []) if isinstance(op, dict)]
-    family = diagram_family(question, say)
-    if family:
-        templated = _template(family, step_index, question)
-        if templated is not None:
-            return templated
+    # English technical terms in Arabic lessons must not select English templates.
+    if not re.search(r"[\u0600-\u06ff]", _blob(question, say, board)):
+        family = diagram_family(question, say)
+        if family:
+            templated = _template(family, step_index, question)
+            if templated is not None:
+                return templated
     return _repair_generic(question, step_index, say, board)
 
 
@@ -565,7 +567,8 @@ def _repair_generic(question, step_index, say, board):
     lines = _note_lines(say)
     if not lines:
         return repaired
-    return [{"op": "notes", "title": "Key point", "lines": lines,
+    title = "\u0641\u0643\u0631\u0629 \u0623\u0633\u0627\u0633\u064a\u0629" if re.search(r"[\u0600-\u06ff]", str(say)) else "Key point"
+    return [{"op": "notes", "title": title, "lines": lines,
              "at": [67, 35], "color": "gray"}]
 
 
@@ -577,16 +580,15 @@ def _is_checkin(say):
 def _note_lines(say):
     text = re.sub(r"\s+", " ", str(say or "")).strip()
     text = re.sub(r"^(and|so|now|then|first|next|finally),?\s+", "", text, flags=re.I)
-    chunks = re.split(r"[.;:]|\bwhile\b|\bbecause\b|\bwhich\b", text)
+    chunks = re.split(r"[;:\u060c\u061b\u061f!?]|[.,](?!\d)|\bwhile\b|\bbecause\b|\bwhich\b", text)
     lines = []
     for chunk in chunks:
-        words = re.findall(r"[A-Za-z0-9^+-]+", chunk)
-        if len(words) < 3:
-            continue
-        line = " ".join(words[:5])
-        if len(line) > 24:
-            line = " ".join(words[:4])
-        if line and line.lower() not in {x.lower() for x in lines}:
+        # Whitespace preserves Arabic diacritics, technical terms, and equations.
+        words = chunk.split()[:5]
+        while words and len(" ".join(words)) > 26:
+            words.pop()
+        line = " ".join(words)
+        if any(c.isalnum() for c in line) and line.lower() not in {x.lower() for x in lines}:
             lines.append(line)
         if len(lines) == 3:
             break

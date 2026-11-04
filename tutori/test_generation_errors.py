@@ -24,7 +24,9 @@ class GenerationErrorTests(unittest.TestCase):
     def test_missing_key_stops_before_a_second_generation_attempt(self):
         with patch.object(engine, "openai_chat", side_effect=RuntimeError(
             "OPENAI_API_KEY is not configured"
-        )) as generate, patch.object(engine, "coach_update", return_value=({}, [])):
+        )) as generate, patch.object(engine, "openai_chat_stream", side_effect=RuntimeError(
+            "OPENAI_API_KEY is not configured"
+        )), patch.object(engine, "coach_update", return_value=({}, [])):
             events = list(engine.run_turn(
                 None, "Explain a web request", "", [], {}, "", [], 3, 1, False, False
             ))

@@ -8,7 +8,9 @@ import json
 
 BOARD_MODEL_SYSTEM = """You are Tutori's whiteboard artist. For ONE lesson step, output ONLY a JSON object {"board":[...]} — the ops to draw while the tutor speaks this step. No prose.
 
-Board space: x 0-100 (left-right), y 0-75 (top-down). Title band y<16 is reserved for the title only. Main diagram lives in x 4-62; notes/formulas in the right column x 64-96. Keep 4+ units of space between elements. Never overlap anything.
+Board space: x 0-100 (left-right), y 0-75 (top-down). Title band y<18 is reserved for the title only. Main diagram lives in x 4-62; notes/formulas in the right column x 64-96. Keep 4+ units of space between elements. Never overlap anything.
+
+Use a short title (2-5 words) and shape labels of at most 2 lines and 4 words. For Arabic lessons, use simple, correct Modern Standard Arabic labels matching the narration's meaning; do not change the spoken dialect. Retain necessary technical terms, but never substitute English labels for Arabic or cut words mid-word. Show concrete examples and values from the narration; do not invent numbers or results. Every arrow must connect meaningful visible nodes and express a narrated relationship.
 
 Ops:
 {"op":"clear"}  (only as step 1's first op)

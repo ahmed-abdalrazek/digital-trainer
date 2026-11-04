@@ -21,6 +21,8 @@ import io
 import json
 import mimetypes
 import os
+import queue
+import threading
 from pathlib import Path
 import re
 import subprocess
@@ -141,13 +143,19 @@ Available ops (use ONLY these — anything else is ignored):
 Every visible op MUST have a short unique "id". Use those ids in later erase ops.
 In any text/label, use ^ for exponents — "3^2 + 4^2 = 5^2" renders as real superscripts.
 Colors C: "ink", "blue", "red", "green", "orange", "purple", "gray".
-Layout rules: title around y 5-12; main content between y 16 and y 68; keep 4+ units
-of whitespace between elements; boxes need w >= 4.5 per label character at size "m";
+Layout rules: reserve y<18 for the title only; main content between y 18 and y 68; keep 4+ units
+of whitespace between elements; size shapes to fit their labels without shrinking text;
 never place two elements at overlapping coordinates. Use compact diagrams: the main
 shape should usually occupy less than half the board width so there is room for
 formulas, examples, and callouts. Use callouts instead of large explanatory text
 inside the diagram.
 Keep every label fully inside its owning shape with clear padding from the border.
+Use a short title (2-5 words) and shape labels of at most 2 lines and 4 words.
+For Arabic lessons, use simple, correct Modern Standard Arabic on the board, matching
+the narration's meaning without changing its spoken dialect. Keep necessary technical
+terms and symbols, but never replace Arabic labels with English or cut words mid-word.
+Show concrete examples and values from the narration, not invented numbers or results.
+Every arrow must connect meaningful visible nodes and express a narrated relationship.
 Never draw a callout ring across a word, multi-word label, box, or ellipse: rings are
 only for a tiny symbol or unlabeled point. To explain a labeled shape, connect from
 its OUTER EDGE to a compact note in open space. Before returning JSON, mentally trace
@@ -179,6 +187,10 @@ Rules for "say" (spoken by a TTS voice):
 
 Rules for "steps":
 - Use exactly the requested step range and spoken depth below.
+- Step 1 is a SHORT spoken opener: one sentence of at most 15 words, with the title
+  and at most 2 board ops. It starts playing while you write the rest, so the
+  learner hears you within seconds; put the substance in the steps after it.
+- Write "say" before "board" inside every step object.
 - Each step has 1 to 6 board ops that draw exactly what that step says, as you say it.
 - The visual lesson should carry roughly half the teaching. If the spoken step names
   a part, value, result, or relationship, draw a compact mark for it instead of only
@@ -527,6 +539,128 @@ def extract_lesson_steps(text):
 
 _TEXT_H = {"s": 3.6, "m": 4.8, "l": 6.2, "xl": 7.4}
 
+# Text metrics mirror static/board.js so the layout engine reserves the space
+# the browser will actually paint. Font size in board units = fontPx() base.
+# Per-char widths (in em) were measured in the browser: Arabic in Tahoma 600
+# averages 0.50-0.62em, far wider than the old Latin-only estimate, and the
+# renderer wraps long strings onto extra lines that the old bbox ignored.
+_FONT_UNITS = {"xs": 2.55, "s": 3.0, "m": 4.0, "l": 5.1, "xl": 6.2}
+_WRAP_W = 52.0           # board.js default maxW for text without fit_w
+_NOTES_WRAP_W = 44.0     # board.js wraps each notes line at this width
+_ARABIC_RE = re.compile(r"[؀-ۿݐ-ݿࢠ-ࣿ]")
+
+
+def _is_arabic(s):
+    return bool(_ARABIC_RE.search(str(s or "")))
+
+
+# Per-letter advance (em) of Tahoma 600 in running Arabic text, fitted by
+# least squares to ~230 words measured with canvas measureText (held-out
+# p95 error 17%, vs 46% for one flat width). Includes a 5% safety margin.
+_AR_EM = {c: round(v * 1.05, 3) for c, v in {
+    "ء": 0.355, "آ": 0.697, "أ": 0.239, "إ": 0.313, "ئ": 0.606, "ؤ": 0.61,
+    "ا": 0.274, "ب": 0.579, "ة": 0.353, "ت": 0.427, "ث": 0.558, "ج": 0.798,
+    "ح": 0.86, "خ": 0.844, "د": 0.559, "ذ": 0.488, "ر": 0.4, "ز": 0.534,
+    "س": 1.273, "ش": 1.304, "ص": 1.053, "ض": 0.942, "ط": 0.956, "ظ": 1.113,
+    "ع": 0.687, "غ": 0.618, "ف": 0.719, "ق": 0.625, "ك": 0.657, "ل": 0.494,
+    "م": 0.626, "ن": 0.455, "ه": 0.727, "و": 0.61, "ى": 0.887, "ي": 0.516,
+}.items()}
+
+
+def _char_em(ch):
+    o = ord(ch)
+    if ch == " ":
+        return 0.30
+    if 0x064B <= o <= 0x065F or o == 0x0670:   # harakat take no width
+        return 0.0
+    if ch in _AR_EM:
+        return _AR_EM[ch]
+    if 0x0600 <= o <= 0x06FF or 0x0750 <= o <= 0x077F or 0x08A0 <= o <= 0x08FF:
+        return 0.62   # digits/punctuation/rare letters: a safe average
+    if ch == "^":
+        return 0.0
+    return 0.52
+
+
+def _str_w(s, font):
+    return sum(_char_em(c) for c in str(s)) * font
+
+
+def _text_metrics(text, size="m", max_w=_WRAP_W, shrink=False):
+    """(width, line_count, font_units, line_height) the renderer will use.
+
+    Greedy word wrap at `max_w`, like board.js. With `shrink` the renderer
+    scales the font down so the text fits one line (fit_w labels)."""
+    s = str(text or "").strip()
+    font = _FONT_UNITS.get(size, 4.0)
+    arabic = _is_arabic(s)
+    if shrink:
+        natural = _str_w(s, font)
+        if natural > max_w > 0:
+            # 2% slack, as in board.js: an exact fit can wrap on rounding
+            font = max(1.2, font * max_w / natural * 0.98)
+    space = _char_em(" ") * font
+    lines, cur = [], 0.0
+    for word in s.split():
+        ww = _str_w(word, font)
+        if cur and cur + space + ww > max_w:
+            lines.append(cur)
+            cur = ww
+        else:
+            cur = cur + space + ww if cur else ww
+    if cur or not lines:
+        lines.append(cur)
+    # No safety margin: layout_pass stamps this box onto the op (wrap_w /
+    # max_lines) and board.js fits the text INSIDE it, shrinking slightly
+    # when the real glyphs run wider than this estimate.
+    width = min(max(lines), max_w)
+    line_h = font * (1.2 if arabic else 1.06)
+    return width, len(lines), font, line_h
+
+
+def _text_box(text, at, size="m", align=None, max_w=_WRAP_W, shrink=False):
+    """Bounding box of a text op as drawn: first line is vertically centred
+    on `at`, extra wrapped lines grow downward."""
+    w, n, font, line_h = _text_metrics(text, size, max_w, shrink)
+    x, y = float(at[0]), float(at[1])
+    if align == "center":
+        x -= w / 2
+    half = font * 0.62
+    return (x, y - half, x + w, y + (n - 1) * line_h + half)
+
+
+def _notes_layout(op):
+    """Lines of a notes block as board.js draws them: [(text, size, indent)]
+    plus the (width, height) of the whole block in board units."""
+    compact = bool(op.get("compact"))
+    rows = []
+    if op.get("title"):
+        rows.append((str(op["title"]), "s" if compact else "m", 0.0, True))
+    for t in (op.get("lines") or [])[:7]:
+        # compact really draws smaller (board.js uses "xs" for these rows)
+        rows.append((str(t), "xs" if compact else "s", 1.5 if compact else 2.0, False))
+    width, height, bottom = 8.0, 0.0, 0.0
+    for text, size, indent, is_title in rows:
+        w, n, font, line_h = _text_metrics(text, size, _NOTES_WRAP_W)
+        width = max(width, w + indent)
+        # ink of this row ends below its centre line (at `height`)
+        bottom = max(bottom, height + (n - 1) * line_h + font * 0.62)
+        gap = (4.8 if compact else 6.2) if is_title else (4.0 if compact else 5.2)
+        height += gap + (n - 1) * line_h
+    # height = board.js row advance total (its box_h); bottom = where the
+    # last row's ink actually ends, below `at` — the bbox uses this one
+    return rows, width, height, bottom
+
+
+def _clip_words(s, limit):
+    """Shorten to at most `limit` chars without cutting a word in half."""
+    s = re.sub(r"\s+", " ", str(s or "")).strip()
+    if len(s) <= limit:
+        return s
+    cut = s[:limit + 1]
+    space = cut.rfind(" ")
+    return (cut[:space] if space >= limit * 0.5 else s[:limit]).rstrip(" ،,:;-")
+
 
 def _clamp_pt(pt, lo_x=2, hi_x=98, lo_y=3, hi_y=72):
     try:
@@ -539,16 +673,18 @@ def _op_bbox(op):
     """Rough bounding box (x1, y1, x2, y2) for collision checks; None = skip."""
     kind = op.get("op")
     if kind == "title":
-        return (8, 1, 92, 13)  # long titles render nearly full-width
+        # long titles render nearly full-width; board.js draws the title's
+        # underline at y=15, so the reserved band reaches below it
+        return (8, 1, 92, 16.5)
     if kind in ("text", "note"):
-        x, y = op.get("at", [10, 20])
-        size = op.get("size", "m" if kind == "text" else "s")
-        w = min(len(str(op.get("text", ""))) * {"s": 1.45, "m": 1.9, "l": 2.35, "xl": 2.9}.get(size, 1.9), 48)
-        lines = max(1, int(w // 52) + 1)
-        h = _TEXT_H.get(size, 5.5) * lines
-        if op.get("align") == "center":
-            x -= w / 2
-        return (x, y - h / 2, x + w, y + h / 2)
+        size = op.get("size", "m") if kind == "text" else "s"
+        fit_w = op.get("fit_w") if kind == "text" else None
+        try:
+            fit_w = float(fit_w) if fit_w else None
+        except Exception:
+            fit_w = None
+        return _text_box(op.get("text", ""), op.get("at", [10, 20]), size,
+                         op.get("align"), fit_w or _WRAP_W, shrink=bool(fit_w))
     if kind in ("box", "ellipse", "axes", "graph"):
         x, y = op.get("at", [10, 20])
         return (x, y, x + float(op.get("w", 20) or 20), y + float(op.get("h", 10) or 10))
@@ -559,17 +695,12 @@ def _op_bbox(op):
         return (min(xs) - pad, min(ys) - pad, max(xs) + pad, max(ys) + pad)
     if kind == "notes":
         x, y = op.get("at", [66, 20])
-        lines = ([str(op["title"])] if op.get("title") else []) + \
-                [str(t) for t in (op.get("lines") or [])[:7]]
-        w = min(max((len(s) for s in lines), default=8) * 1.7 + 3, 42)
-        h = 4 + len(lines) * 5.4
-        if op.get("compact"):
-            w, h = w * 0.78, h * 0.74
-        return (x - 1, y - 3, x + w, y + h)
+        _rows, w, _h, bottom = _notes_layout(op)
+        return (x - 1, y - 3, x + w + 1, y + bottom + 0.8)
     if kind == "callout" and op.get("label"):
         x, y = op.get("label_at") or op.get("to") or [55, 35]
-        w = min(len(str(op.get("label", ""))) * 1.45, 28)
-        return (x - w / 2, y - 2.5, x + w / 2, y + 2.5)
+        return _text_box(op.get("label", ""), [x, y], "s", "center",
+                         float(op.get("fit_w") or 24), shrink=True)
     return None
 
 
@@ -582,12 +713,16 @@ def _overlaps(a, b):
 _VALUE_RE = re.compile(r"^\s*[\w^()]{1,6}\s*[=≈→]\s*[\d?][\w.?]{0,7}\s*$")
 
 
-def _score(bbox, placed):
+def _score(bbox, placed, gutter=False):
     """Weighted overlap: thin strokes barely count (text over a line is fine
-    on a real whiteboard), the title zone counts extra, solids count fully."""
+    on a real whiteboard), the title zone counts extra, solids count fully.
+
+    Boxes are registered with a gutter (6th field = real box). Only shapes
+    keep that distance from each other (`gutter=True`); text and labels may
+    sit right next to a box, e.g. a label on a short arrow between two."""
     s = 0.0
     for p in placed:
-        a = _overlap_area(bbox, p)
+        a = _overlap_area(bbox, p if gutter or len(p) < 6 else p[5])
         if a:
             s += a * (p[4] if len(p) > 4 else 1.0)
     return s
@@ -643,7 +778,7 @@ def _snap_endpoint_to_edge(pt, other, placed):
     for p in reversed(placed):
         if len(p) > 4 and p[4] < 0.5:
             continue
-        x1, y1, x2, y2 = p[:4]
+        x1, y1, x2, y2 = p[5][:4] if len(p) > 5 else p[:4]
         w, h = x2 - x1, y2 - y1
         if y2 <= 16 or w < 8 or h < 6:
             continue
@@ -709,6 +844,18 @@ def _solid_area(placed):
             continue
         s += max(0.0, (p[2] - p[0]) * (p[3] - p[1]))
     return s
+
+
+def _pt_seg_dist(p, a, b):
+    """Distance from point p to segment a-b (board units)."""
+    try:
+        px_, py_ = float(p[0]), float(p[1])
+        ax, ay, bx, by = float(a[0]), float(a[1]), float(b[0]), float(b[1])
+    except Exception:
+        return 0.0
+    dx, dy = bx - ax, by - ay
+    t = 0.0 if dx == dy == 0 else max(0.0, min(1.0, ((px_ - ax) * dx + (py_ - ay) * dy) / (dx * dx + dy * dy)))
+    return ((px_ - ax - t * dx) ** 2 + (py_ - ay - t * dy) ** 2) ** 0.5
 
 
 def _stroke_len(a, b):
@@ -850,7 +997,7 @@ def layout_pass(board, placed, displaced, anchors, state):
                         px = min(max(x0 + dx, 2), 96 - w)
                         py = min(max(y0 + dy, 3), 71 - h)
                         bbox = (px, py, px + w, py + h)
-                        score = _score(bbox, placed)
+                        score = _score(bbox, placed, gutter=True)
                         if score <= 0.5:
                             best = ([px, py], bbox, score)
                             break
@@ -862,7 +1009,7 @@ def layout_pass(board, placed, displaced, anchors, state):
                         for py in range(16, max(17, int(72 - h)), 5):
                             for px in range(3, max(4, int(95 - w)), 5):
                                 bbox = (px, py, px + w, py + h)
-                                score = _score(bbox, placed)
+                                score = _score(bbox, placed, gutter=True)
                                 score += 0.02 * (abs(px - x0) + abs(py - y0))
                                 if score < best[2]:
                                     best = ([px, py], bbox, score)
@@ -916,6 +1063,14 @@ def layout_pass(board, placed, displaced, anchors, state):
                     # interior is mostly empty space; edges are sampled
                     # separately, so the bbox itself counts at reduced weight
                     placed.append((bbox[0], bbox[1], bbox[2], bbox[3], 0.6))
+                elif kind in ("box", "ellipse"):
+                    # keep a gutter around nodes: two boxes pushed flush
+                    # against each other leave no room for the arrow and its
+                    # label that connect them
+                    # (6th field = the real box: arrows snap to that edge,
+                    # not to the gutter, or short connectors collapse)
+                    placed.append((bbox[0] - 2.5, bbox[1] - 2.5,
+                                   bbox[2] + 2.5, bbox[3] + 2.5, 1.0, bbox))
                 else:
                     placed.append(bbox)
         except Exception:
@@ -1002,16 +1157,20 @@ def layout_pass(board, placed, displaced, anchors, state):
 
                 raw_bbox = _op_bbox(op)
                 est_w = raw_bbox[2] - raw_bbox[0]
-                est_h = raw_bbox[3] - raw_bbox[1]
+                # wrapped lines grow DOWN from the anchor, so the box is not
+                # symmetric around `at`; clamp with the real offsets
+                above = model_at[1] - raw_bbox[1]
+                below = raw_bbox[3] - model_at[1]
 
-                def fit_x(pos, _w=est_w, _h=est_h, _c=op.get("align") == "center"):
+                def fit_x(pos, _w=est_w, _up=above, _dn=below,
+                          _c=op.get("align") == "center"):
                     # keep the whole text on the board — applied BEFORE the
                     # collision check (shifting after it caused real overlaps)
                     if _c:
                         x = min(max(pos[0], _w / 2 + 2), 98 - _w / 2)
                     else:
                         x = min(pos[0], max(3, 97 - _w))
-                    y = min(max(pos[1], _h / 2 + 2), 73 - _h / 2)
+                    y = min(max(pos[1], _up + 2), 73 - _dn)
                     return [x, y]
 
                 def bbox_at(pos, _op=op):
@@ -1060,24 +1219,73 @@ def layout_pass(board, placed, displaced, anchors, state):
                 else:
                     ax, ay = op.get("at", [50, 38])
                     start = [ax + 3, ay - 3]
-                w = min(len(str(op["label"])) * 1.6, 30)
+                # board.js draws these labels at size "s", shrunk onto one
+                # line inside LABEL_FIT_W (callouts: their own fit_w)
+                fit = float(op.get("fit_w") or 24) if kind == "callout" else 30.0
+                w, _n, font, _lh = _text_metrics(op["label"], "s", fit, shrink=True)
+                half_h = max(2.5, font * 0.62 + 0.6)
 
                 def lbl_fit(pos, _w=w):
                     return [min(max(pos[0], _w / 2 + 2), 98 - _w / 2),
                             min(max(pos[1], 4), 71)]
 
-                def lbl_bbox(pos, _w=w):
+                def lbl_bbox(pos, _w=w, _h=half_h):
                     p = lbl_fit(pos)
-                    return (p[0] - _w / 2, p[1] - 2.5, p[0] + _w / 2, p[1] + 2.5)
-                pos, bbox = _free_spot(lbl_bbox, start, placed,
-                                       _LABEL_CANDIDATES + [(0, 10), (0, -14),
-                                                            (16, 0), (-16, 0),
-                                                            (14, 10), (-14, 10)])
-                if _score(bbox, placed) > 1.5:
+                    return (p[0] - _w / 2, p[1] - _h, p[0] + _w / 2, p[1] + _h)
+                cands = []
+                if kind == "arrow":
+                    # first hug the arrow: both sides of it, at several points
+                    # along its length, before searching the neighbourhood
+                    ax_, ay_ = float(fx), float(fy)
+                    vx, vy = float(tx) - ax_, float(ty) - ay_
+                    ln = (vx * vx + vy * vy) ** 0.5 or 1.0
+                    nx_, ny_ = -vy / ln, vx / ln
+                    if ny_ > 0:                      # try the upper side first
+                        nx_, ny_ = -nx_, -ny_
+                    # label box extent along the arrow's normal, plus room to
+                    # clear the arrow's own stroke samples (registered ±2.2)
+                    reach = abs(nx_) * w / 2 + abs(ny_) * half_h
+                    off = reach + 2.4
+                    for t in (0.5, 0.35, 0.65, 0.2, 0.8):
+                        for sgn in (1, -1):
+                            qx = ax_ + vx * t + nx_ * off * sgn
+                            qy = ay_ + vy * t + ny_ * off * sgn
+                            cands.append((qx - start[0], qy - start[1]))
+                hug = None
+                for dx, dy in cands:
+                    b = lbl_bbox([start[0] + dx, start[1] + dy])
+                    sc = _score(b, placed)
+                    if hug is None or sc < hug[2] - 0.05:
+                        hug = ([start[0] + dx, start[1] + dy], b, sc)
+                if hug and hug[2] <= 1.5:
+                    # a near spot that merely grazes a stroke beats a pristine
+                    # one so far away that the label loses its arrow
+                    pos, bbox = hug[0], hug[1]
+                else:
+                    pos, bbox = _free_spot(lbl_bbox, start, placed,
+                                           _LABEL_CANDIDATES + [(0, 10), (0, -14),
+                                                                (16, 0), (-16, 0),
+                                                                (14, 10), (-14, 10)])
+                far = False
+                if kind == "arrow":
+                    # a label parked far from its arrow (e.g. "ثم" between
+                    # two close boxes, pushed 10+ units away) floats with no
+                    # visible owner; the narration already says it
+                    # gap between the label's EDGE and the stroke
+                    lx, ly = lbl_fit(pos)
+                    far = _pt_seg_dist((lx, ly), op.get("from", [lx, ly]),
+                                       op.get("to", [lx, ly])) - reach > 5.0
+                if far or _score(bbox, placed) > 1.5:
                     op["label"] = None        # nowhere readable — say it, don't draw it
+                    if kind == "callout":
+                        # a ring + leader line pointing at no label reads as
+                        # a stray scribble; drop the whole callout instead
+                        op["_drop"] = True
                 else:
                     op["label_at"] = lbl_fit(pos)
-                    placed.append(bbox)
+                    # a little breathing room, like floating text gets
+                    placed.append((bbox[0] - 0.8, bbox[1] - 0.8,
+                                   bbox[2] + 0.8, bbox[3] + 0.8))
         except Exception:
             pass
 
@@ -1091,6 +1299,10 @@ def layout_pass(board, placed, displaced, anchors, state):
                     op["to"] = _shift_pt(op["to"], text_disp)
                     if op.get("op") == "arrow":
                         _cap_arrow(op)
+                elif op.get("op") == "callout" and not op.get("_drop"):
+                    # the ring circles a symbol in the text ("F" in F = m×a);
+                    # if that text moved, the ring must move with it
+                    op["around"] = _shift_pt(op.get("around", [50, 38]), text_disp)
             except Exception:
                 pass
 
@@ -1139,7 +1351,29 @@ def layout_pass(board, placed, displaced, anchors, state):
             # no anchor: drop the op
         except Exception:
             kept.append(op)
-    return [op for op in kept if not op.get("_drop")]
+    kept = [op for op in kept if not op.get("_drop")]
+    for op in kept:
+        _stamp_text_box(op)
+    return kept
+
+
+def _stamp_text_box(op):
+    """Hand board.js the exact box layout reserved for this text, so the
+    renderer fits the glyphs inside it instead of re-wrapping on its own
+    (a different line break was the source of Arabic text overlaps)."""
+    try:
+        kind = op.get("op")
+        if kind in ("text", "note") and not (kind == "text" and op.get("fit_w")):
+            size = op.get("size", "m") if kind == "text" else "s"
+            w, n, _font, _lh = _text_metrics(op.get("text", ""), size, _WRAP_W)
+            op["wrap_w"] = round(w + 0.3, 2)
+            op["max_lines"] = n
+        elif kind == "notes":
+            _rows, w, h, _bottom = _notes_layout(op)
+            op["wrap_w"] = round(w + 0.3, 2)
+            op["box_h"] = round(h, 2)
+    except Exception:
+        pass
 
 
 # models sometimes double-escape unicode in JSON ("\\u2192") — json.loads
@@ -1174,8 +1408,11 @@ def _normalize_op(op):
         op["lines"] = op.pop("items")
     if op["op"] == "notes":  # bound the block so it can always be placed
         if op.get("title"):
-            op["title"] = str(op["title"])[:26]
-        op["lines"] = [str(t)[:24] for t in (op.get("lines") or [])][:5]
+            op["title"] = _clip_words(op["title"], 30)
+        # lines wrap in the renderer now, so keep whole words instead of
+        # chopping Arabic mid-word at 24 chars
+        op["lines"] = [_clip_words(t, 40) for t in (op.get("lines") or [])
+                       if str(t).strip()][:5]
     if op["op"] == "callout":
         if "around" not in op and "at" in op:
             op["around"] = op.get("at")
@@ -1186,7 +1423,7 @@ def _normalize_op(op):
         except Exception:
             op["r"] = 3.0
         if op.get("label"):
-            op["label"] = str(op["label"])[:26]
+            op["label"] = _clip_words(op["label"], 26)
     # very long display text at large sizes is a layout bomb — demote size
     if op["op"] == "text":
         tlen = len(str(op.get("text", "")))
@@ -1365,7 +1602,7 @@ def _merge_text_groups(board):
                     break
             if members:
                 out.append({"op": "notes", "title": txt,
-                            "lines": [str(m.get("text", ""))[:26] for m in members],
+                            "lines": [_clip_words(m.get("text", ""), 40) for m in members],
                             "at": list(op["at"]),
                             "color": op.get("color", "ink")})
                 i = j
@@ -1880,12 +2117,34 @@ def _rebuild_layout(active_ops):
             kind = op.get("op")
             bb = _op_bbox(op)
             if bb:
-                placed.append(bb)
+                if kind in ("box", "ellipse"):
+                    # same gutter layout_pass reserves around nodes
+                    placed.append((bb[0] - 2.5, bb[1] - 2.5, bb[2] + 2.5, bb[3] + 2.5, 1.0, bb))
+                else:
+                    placed.append(bb)
                 if kind in ("text", "note"):
                     anchors.append({"orig": list(op.get("at", [10, 20])), "bbox": bb})
                 if kind != "title":
                     state["area_used"] = state.get("area_used", 0.0) + \
                         max(0, (bb[2] - bb[0]) * (bb[3] - bb[1]))
+            # strokes and their labels have no _op_bbox, but they are on the
+            # board: without them every new step wrote text over earlier
+            # arrows and arrow labels (e.g. a later sentence over "عمودية")
+            if kind in ("arrow", "line") and op.get("from") and op.get("to"):
+                for x, y in _seg_samples(op["from"], op["to"], 5.0):
+                    placed.append((x - 2.2, y - 2.2, x + 2.2, y + 2.2, 0.25))
+            if kind in ("curve", "polygon"):
+                pts = list(op.get("points") or [])
+                if kind == "polygon" and len(pts) >= 3:
+                    pts = pts + [pts[0]]
+                for i in range(len(pts) - 1):
+                    for x, y in _seg_samples(pts[i], pts[i + 1], 6.0):
+                        placed.append((x - 2.2, y - 2.2, x + 2.2, y + 2.2, 0.25))
+            if kind in ("arrow", "dot") and op.get("label") and op.get("label_at"):
+                w, _n, font, _lh = _text_metrics(op["label"], "s", 30.0, shrink=True)
+                lx, ly = op["label_at"]
+                hh = max(2.5, font * 0.62 + 0.6)
+                placed.append((lx - w / 2 - 0.8, ly - hh - 0.8, lx + w / 2 + 0.8, ly + hh + 0.8))
             if kind == "title":
                 state["has_title"] = True
             if kind == "curve":
@@ -1915,28 +2174,30 @@ def run_turn(audio_path, typed_text, board_snapshot, history, profile,
     try:
         question = (typed_text or "").strip()
         if audio_path:
-            yield {"type": "status", "status": "thinking", "detail": f"Listening with {ASR_ID}…"}
+            yield {"type": "status", "status": "thinking", "detail": "يستمع المدرب إلى سؤالك…"}
             heard = transcribe(audio_path)
+            print(f"[tutori] timing: transcribed at {time.time() - t0:.1f}s", flush=True)
             question = f"{heard} {question}".strip() if question else heard
             yield {"type": "transcript", "text": question}
         if not question and not board_snapshot:
-            yield {"type": "final", "text": "", "error": "I didn't catch anything — try again?"}
+            yield {"type": "final", "text": "", "error": "لم أسمع سؤالًا واضحًا. حاول مرة أخرى."}
             return
         if not question:
             question = "Take a look at what I drew on the board and help me with it."
 
         board_observation = ""
         if board_snapshot:
-            yield {"type": "status", "status": "thinking", "detail": "Reading your whiteboard…"}
+            yield {"type": "status", "status": "thinking", "detail": "يقرأ المدرب رسمك على السبورة…"}
             board_observation = analyze_board(board_snapshot)
 
         # A follow-up is a short answer, not another full-length lecture.
         minutes, planned_steps, duration_guidance = _duration_spec(
             1 if history else lesson_minutes
         )
-        yield {"type": "status", "status": "thinking", "detail": "Choosing the clearest teaching path…"}
+        yield {"type": "status", "status": "thinking", "detail": "يختار المدرب أوضح طريقة للشرح…"}
         plan = build_agent_plan(question, history, profile, notes, board_now,
                                 board_observation, minutes, web_on)
+        print(f"[tutori] timing: plan ready at {time.time() - t0:.1f}s", flush=True)
 
         web_context = ""
         urls = _extract_urls(question) if web_on else []
@@ -1949,8 +2210,9 @@ def run_turn(audio_path, typed_text, board_snapshot, history, profile,
         if urls or queries:
             bits = (["reading source"] if urls else []) + queries
             yield {"type": "status", "status": "searching",
-                   "detail": "Researching: " + " · ".join(bits)}
+                   "detail": "يبحث المدرب: " + " · ".join(bits)}
             web_context = web_research(queries, urls=urls)
+            print(f"[tutori] timing: research done at {time.time() - t0:.1f}s", flush=True)
             if web_context:
                 yield {"type": "research", "notes": web_context}
 
@@ -1961,9 +2223,11 @@ def run_turn(audio_path, typed_text, board_snapshot, history, profile,
             board_observation, duration_guidance, notes=notes or "", board_now=board_now,
         )
         max_tokens = min(18000, 3800 + minutes * 1100)
-        reasoning = "low"
-        detail = "Preparing a concise answer…" if history else \
-            f"Preparing one coherent {minutes}-minute lesson…"
+        # "none" measured: first token 1.5s vs 7.5s with "low" on a 5-minute
+        # lesson, with the same quality of board. TUTORI_REASONING=low restores it.
+        reasoning = os.environ.get("TUTORI_REASONING", "none")
+        detail = "يجهّز المدرب إجابة مختصرة…" if history else \
+            f"يجهّز المدرب شرحًا مترابطًا مدته {minutes} دقائق…"
         yield {"type": "status", "status": "teaching", "detail": detail}
         pool = ThreadPoolExecutor(max_workers=4) if voice_on else None
         active_ops = list(board_now or [])[-80:]
@@ -2014,15 +2278,87 @@ def run_turn(audio_path, typed_text, board_snapshot, history, profile,
             step["voice_missing"] = bool(voice_on and not audio_b64)
             return step
 
-        # The model usually returns this four-step chapter in a few seconds.
-        # Some providers emit partial/cumulative SSE chunks, so a
-        # normal JSON response is measurably more reliable than reconstructing
-        # partial JSON on the client.
+        # Stream the lesson: each step goes to the board as soon as its JSON
+        # object closes (and its narration is rendered), instead of waiting
+        # for the whole multi-minute lesson to be written first. Measured on
+        # a 5-minute lesson: first panel at ~25s with the whole-JSON request.
+        # If streaming yields nothing usable, fall back to that request below.
+        streamed_any = False
+        streamed_text = ""
+        if os.environ.get("TUTORI_STREAM_LESSON", "1") != "0":
+            events_q = queue.Queue()
+
+            def _stream_worker():
+                parser = LessonStreamParser()
+                parts, count = [], 0
+                try:
+                    for chunk in openai_chat_stream(
+                        msgs, model=teacher_model, max_tokens=max_tokens,
+                        temperature=0.34, json_mode=True, reasoning=reasoning,
+                        timeout=75,
+                    ):
+                        if not parts:
+                            print(f"[tutori] timing: first token at {time.time() - t0:.1f}s",
+                                  flush=True)
+                        parts.append(chunk)
+                        for obj in parser.feed(chunk):
+                            fut = None
+                            # start this step's narration right away, while
+                            # the model keeps writing the next steps
+                            if (pool and count < planned_steps and isinstance(obj, dict)
+                                    and obj.get("say")):
+                                fut = pool.submit(synthesize, obj["say"])
+                            count += 1
+                            events_q.put(("step", obj, fut))
+                    events_q.put(("done", "".join(parts), None))
+                except Exception as exc:
+                    events_q.put(("error", exc, "".join(parts)))
+
+            threading.Thread(target=_stream_worker, daemon=True).start()
+            s_idx = 0
+            while True:
+                try:
+                    kind_, item, extra = events_q.get(timeout=90)
+                except queue.Empty:
+                    print("[tutori] lesson stream stalled; stopping", flush=True)
+                    break
+                if kind_ == "step":
+                    if s_idx >= planned_steps:
+                        continue
+                    step = prepare_step(item, s_idx, extra)
+                    s_idx += 1
+                    if not step:
+                        continue
+                    if n_steps == 0:
+                        print(f"[tutori] first panel ready in {time.time() - t0:.1f}s "
+                              f"via {teacher_name} (streamed)", flush=True)
+                    said.append(step["say"])
+                    n_steps += 1
+                    streamed_any = True
+                    yield {"type": "step", "step": step}
+                    continue
+                if kind_ == "done":
+                    streamed_text = item
+                    print(f"[tutori] timing: lesson stream finished at "
+                          f"{time.time() - t0:.1f}s ({len(item)} chars, {s_idx} steps, "
+                          f"{minutes} min)", flush=True)
+                else:
+                    streamed_text = extra or ""
+                    print(f"[tutori] lesson stream failed after {s_idx} steps: "
+                          f"{item!r}", flush=True)
+                break
+
         full_text = ""
         raw_steps = []
         best_text, best_steps = "", []
+        if not streamed_any and streamed_text:
+            # the stream finished but its steps were not incrementally
+            # parseable (e.g. unusual wrapping) — parse the whole text
+            best_text, best_steps = streamed_text, extract_lesson_steps(streamed_text)
         last_generation_error = None
         for attempt, temperature in enumerate((0.34, 0.14), start=1):
+            if streamed_any or len(best_steps) >= 3:
+                break
             try:
                 candidate_text = openai_chat(
                     msgs, model=teacher_model, max_tokens=max_tokens,
@@ -2047,7 +2383,12 @@ def run_turn(audio_path, typed_text, board_snapshot, history, profile,
             print(f"[tutori] {MODEL_ID} attempt {attempt} returned "
                   f"{len(candidate_steps)} lesson steps; retrying", flush=True)
         full_text, raw_steps = best_text, best_steps
-        if not full_text and not raw_steps:
+        if not streamed_any:
+            print(f"[tutori] timing: lesson text generated at {time.time() - t0:.1f}s "
+                  f"({len(full_text)} chars, {minutes} min)", flush=True)
+        if streamed_any:
+            pass   # already taught step by step above
+        elif not full_text and not raw_steps:
             if last_generation_error is not None:
                 raise RuntimeError(str(last_generation_error)) from last_generation_error
             raise RuntimeError(f"{MODEL_ID} timed out before the first panel")
@@ -2059,14 +2400,15 @@ def run_turn(audio_path, typed_text, board_snapshot, history, profile,
             plain = re.sub(r"[{}\[\]\"]", "", full_text).strip()[:650]
             raw_steps = [{"say": plain or "Let's build that idea one clean step at a time.",
                           "board": []}]
-        print(f"[tutori] lesson: {len(raw_steps)} raw steps, "
-              f"{len(full_text)} chars", flush=True)
+        if not streamed_any:
+            print(f"[tutori] lesson: {len(raw_steps)} raw steps, "
+                  f"{len(full_text)} chars", flush=True)
         quick_audio_futures = {}
-        if pool:
+        if pool and not streamed_any:
             for idx, raw_step in enumerate(raw_steps[:planned_steps]):
                 if isinstance(raw_step, dict) and raw_step.get("say"):
                     quick_audio_futures[idx] = pool.submit(synthesize, raw_step["say"])
-        for idx, raw_step in enumerate(raw_steps[:planned_steps]):
+        for idx, raw_step in enumerate([] if streamed_any else raw_steps[:planned_steps]):
             step = prepare_step(raw_step, idx, quick_audio_futures.get(idx))
             if not step:
                 continue

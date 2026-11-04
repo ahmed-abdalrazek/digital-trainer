@@ -37,7 +37,6 @@
     scale: 1, offX: 0, offY: 0,
     opSeedCounter: 1,
     voiceOn: true,
-    lessonSlides: false, lessonSlideIndex: 0, lessonSlideTotal: 0,
     keepBoardUntil: 0, serverDone: false, completionText: "انتهى الشرح ✓", lectureCompleted: false,
     scrollTid: 0,
   };
@@ -118,7 +117,9 @@
   }
 
   function fontPx(size) {
-    const base = { s: 3.0, m: 4.0, l: 5.1, xl: 6.2 }[size || "m"] || 4.0;
+    // numeric sizes are font sizes in board units (notes shrink-to-fit)
+    const base = typeof size === "number" ? size
+      : ({ xs: 2.55, s: 3.0, m: 4.0, l: 5.1, xl: 6.2 }[size || "m"] || 4.0);
     return Math.max(11.5, base * S.scale);
   }
 
@@ -141,11 +142,37 @@
     return segs;
   }
 
-  function drawArabicText(ctx, rnd, fullStr, at, size, colorValue, frac, align, fitW, fitH) {
+  const ARABIC_RE = /[؀-ۿݐ-ݿࢠ-ࣿ]/;
+  const NOTES_WRAP_W = 44;   // must match _NOTES_WRAP_W in engine.py
+  const LABEL_FIT_W = 30;    // arrow/dot labels; matches layout_pass
+
+  // Wrapped size of a string in board units, exactly as drawText lays it out.
+  function measureWrapped(ctx, text, size, maxWUnits) {
+    const str = String(text).replace(/\^/g, "");
+    const arabic = ARABIC_RE.test(str);
+    const fpx = fontPx(size);
+    ctx.save();
+    ctx.font = arabic ? `600 ${fpx}px Tahoma, Arial, sans-serif`
+                      : `600 ${fpx}px Caveat, "Comic Sans MS", cursive`;
+    const maxW = maxWUnits * S.scale;
+    let n = 0, widest = 0, line = "";
+    for (const word of str.trim().split(/\s+/)) {
+      const cand = line ? `${line} ${word}` : word;
+      if (line && ctx.measureText(cand).width > maxW) {
+        widest = Math.max(widest, ctx.measureText(line).width); n++; line = word;
+      } else line = cand;
+    }
+    if (line || !n) { widest = Math.max(widest, ctx.measureText(line).width); n++; }
+    ctx.restore();
+    return { n, w: Math.min(widest, maxW) / S.scale,
+             lineH: fpx * (arabic ? 1.2 : 1.06) / S.scale };
+  }
+
+  function drawArabicText(ctx, rnd, fullStr, at, size, colorValue, frac, align, fitW, fitH, wrapW, maxLines) {
     if (frac <= 0) return;
     const [x, y] = px(at);
     let fontSize = fontPx(size);
-    const maxW = (fitW || (size === "xl" ? 88 : 52)) * S.scale;
+    const maxW = (fitW || wrapW || (size === "xl" ? 88 : 52)) * S.scale;
     const font = () => `600 ${fontSize}px Tahoma, Arial, sans-serif`;
     ctx.save();
     ctx.translate(x, y);
@@ -172,29 +199,55 @@
 
     ctx.font = font();
     const naturalWidth = ctx.measureText(fullStr.replace(/\^/g, "")).width;
-    if (fitW && naturalWidth > maxW) {
-      fontSize = Math.max(9, fontSize * maxW / naturalWidth);
+    if (fitW && !fitH && naturalWidth > maxW) {
+      // one-line labels (callouts, arrows): shrink onto a single line.
+      // 2% slack: an exact fit can still wrap its last word on rounding
+      fontSize = Math.max(9, fontSize * maxW / naturalWidth * 0.98);
     }
     let lines = wrap();
-    if (fitH && lines.length > 1) {
+    // the server reserved exactly `maxLines` lines of `wrapW`: shrink a
+    // little rather than spill a line into whatever sits below
+    for (let k = 0; maxLines && lines.length > maxLines && k < 5; k++) {
+      fontSize *= 0.93;
+      lines = wrap();
+    }
+    if (fitH) {
+      // A label inside a shape: wrap onto more lines FIRST and shrink only
+      // when the wrapped block is still taller (or a word wider) than the
+      // shape. Shrinking to one line first made long labels unreadably tiny.
       const availableH = fitH * S.scale;
-      const neededH = fontSize * (1 + (lines.length - 1) * 1.2);
-      if (neededH > availableH) {
-        fontSize = Math.max(8, fontSize * availableH / neededH);
+      for (let k = 0; k < 10 && fontSize > 9; k++) {
+        ctx.font = font();
+        const neededH = fontSize * (1 + (lines.length - 1) * 1.2);
+        const widest = Math.max(...lines.map(l => ctx.measureText(l).width));
+        if (neededH <= availableH && widest <= maxW) break;
+        fontSize = Math.max(9, fontSize * 0.92);
         lines = wrap();
       }
     }
     ctx.font = font();
-    ctx.textAlign = align === "center" ? "center" : align === "right" ? "right" : "left";
     const lineHeight = fontSize * 1.2;
-    lines.forEach((line, index) => ctx.fillText(line, 0, index * lineHeight, maxW));
+    // inside a shape the wrapped block is centred on the shape's middle
+    const top = fitH ? -(lines.length - 1) * lineHeight / 2 : 0;
+    let anchorX = 0;
+    if (align === "center") ctx.textAlign = "center";
+    else if (align === "right") ctx.textAlign = "right";
+    else {
+      // Left-anchored Arabic keeps the same footprint the server reserved
+      // ([x, x + widest line]) but reads right-to-left: every line starts at
+      // the block's right edge instead of trailing off a ragged right side.
+      const widest = Math.min(maxW, Math.max(...lines.map(l => ctx.measureText(l).width)));
+      anchorX = widest;
+      ctx.textAlign = "right";
+    }
+    lines.forEach((line, index) => ctx.fillText(line, anchorX, top + index * lineHeight, maxW));
     ctx.restore();
   }
 
-  function drawText(ctx, rnd, text, at, size, color, frac, align, fitW, fitH) {
+  function drawText(ctx, rnd, text, at, size, color, frac, align, fitW, fitH, wrapW, maxLines) {
     const fullStr = String(text);
-    if (/[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff]/.test(fullStr)) {
-      drawArabicText(ctx, rnd, fullStr, at, size, color, frac, align, fitW, fitH);
+    if (ARABIC_RE.test(fullStr)) {
+      drawArabicText(ctx, rnd, fullStr, at, size, color, frac, align, fitW, fitH, wrapW, maxLines);
       return;
     }
     const visibleLen = fullStr.replace(/\^/g, "").length;
@@ -220,7 +273,7 @@
     ctx.textBaseline = "middle";
     const fontFor = (sup) =>
       `600 ${sup ? supPx : basePx}px Caveat, "Comic Sans MS", cursive`;
-    const maxW = (fitW || (size === "xl" ? 88 : 52)) * S.scale;
+    const maxW = (fitW || wrapW || (size === "xl" ? 88 : 52)) * S.scale;
     const buildLines = () => {
       supPx = basePx * 0.62;
       const words = fullStr.trim().split(/\s+/).map(w => {
@@ -248,6 +301,10 @@
       return { lines, spaceW };
     };
     let layout = buildLines();
+    for (let k = 0; maxLines && layout.lines.length > maxLines && k < 5; k++) {
+      basePx *= 0.93;          // stay inside the box the server reserved
+      layout = buildLines();
+    }
     if (fitH && layout.lines.length > 1) {
       const requiredH = basePx * (1 + (layout.lines.length - 1) * 1.06);
       const availableH = fitH * S.scale;
@@ -260,7 +317,7 @@
     // draw, spending the reveal budget char by char
     let ly = 0;
     for (const L of lines) {
-      let lx = (align === "center") ? -L.lw / 2 : 0;
+      let lx = (align === "center") ? -L.lw / 2 : (align === "right") ? -L.lw : 0;
       for (let wi = 0; wi < L.line.length; wi++) {
         if (budget <= 0) break;
         if (wi > 0) { lx += spaceW; budget--; }
@@ -316,10 +373,11 @@
         }
         case "text":
           drawText(ctx, rnd, o.text, o.at || [10, 20], o.size || "m",
-            color(o.color), frac, o.align, o.fit_w);
+            color(o.color), frac, o.align, o.fit_w, undefined, o.wrap_w, o.max_lines);
           break;
         case "note":
-          drawText(ctx, rnd, o.text, o.at || [10, 20], "s", color(o.color || "gray"), frac, o.align);
+          drawText(ctx, rnd, o.text, o.at || [10, 20], "s", color(o.color || "gray"), frac, o.align,
+            undefined, undefined, o.wrap_w, o.max_lines);
           break;
         case "line":
           drawLine(ctx, rnd, o.from, o.to, color(o.color), frac, W, o.dash);
@@ -332,7 +390,7 @@
             // server may relocate the label to dodge collisions (label_at)
             const mid = o.label_at ||
               [(o.from[0] + o.to[0]) / 2, (o.from[1] + o.to[1]) / 2 - 3.4];
-            drawText(ctx, rnd, o.label, mid, "s", color(o.color), (frac - 0.55) / 0.45, "center");
+            drawText(ctx, rnd, o.label, mid, "s", color(o.color), (frac - 0.55) / 0.45, "center", LABEL_FIT_W);
           }
           break;
         }
@@ -349,7 +407,15 @@
           if (frac > 0.25) {
             const lineFrac = Math.min(1, (frac - 0.25) / 0.45);
             const a = [c[0] + ux * (r + 0.5), c[1] + uy * (r + 0.5)];
-            const b = [dest[0] - ux * 4.0, dest[1] - uy * 4.0];
+            // stop the leader at the label's edge, not a fixed 4 units from
+            // its centre — a long Arabic label would otherwise be struck through
+            let back = 4.0;
+            if (o.label) {
+              const lm = measureWrapped(ctx, o.label, "s", o.fit_w || 24);
+              const hw = lm.w / 2 + 1.0, hh = lm.lineH / 2 + 0.9;
+              back = Math.min(hw / Math.max(Math.abs(ux), 1e-6), hh / Math.max(Math.abs(uy), 1e-6));
+            }
+            const b = [dest[0] - ux * back, dest[1] - uy * back];
             drawLine(ctx, rnd, a, b, color(o.color || "orange"), lineFrac, W * 0.85);
           }
           if (o.label && frac > 0.55) {
@@ -436,8 +502,13 @@
                 const pxs = pts.map(p => p[0]);
                 chord = (Math.max(...pxs) - Math.min(...pxs)) * 0.55;
               }
+              // a height budget too, so a long label (a decision question in
+              // a diamond) wraps onto two lines instead of shrinking to one
+              const pys = pts.map(p => p[1]);
+              const shapeH = Math.max(...pys) - Math.min(...pys);
               drawText(ctx, rnd, o.label, [lx, cy], o.size || "m",
-                color(o.color), (frac - 0.65) / 0.35, "center", chord * 0.82);
+                color(o.color), (frac - 0.65) / 0.35, "center", chord * 0.82,
+                Math.max(4, shapeH * 0.5));
             }
           }
           break;
@@ -447,19 +518,53 @@
           const compact = !!o.compact;     // server shrinks crowded blocks
           const lines = [];
           if (o.title) lines.push({ t: String(o.title), size: compact ? "s" : "m" });
-          (o.lines || []).slice(0, 7).forEach(t => lines.push({ t: String(t), size: "s" }));
+          (o.lines || []).slice(0, 7).forEach(t => lines.push({ t: String(t), size: compact ? "xs" : "s" }));
           const total = lines.reduce((s, l) => s + l.t.length, 0) || 1;
+          // Measure every row first: long rows wrap, and the rows below must
+          // move down by the extra lines instead of being painted over them.
+          const rtl = lines.some(l => ARABIC_RE.test(l.t));
+          const indent = compact ? 1.5 : 2;
+          const UNITS = { xs: 2.55, s: 3.0, m: 4.0 };
+          // The server reserved wrap_w x box_h for this block. Rows wrap
+          // inside that width; if the real glyphs need more height than
+          // reserved, shrink every row a little instead of overflowing.
+          const blockMax = Math.min(NOTES_WRAP_W + indent, o.wrap_w || NOTES_WRAP_W + indent);
+          const layoutRows = (k) => {
+            let h = 0;
+            const rows = lines.map((ln, li) => {
+              const ind = li > 0 ? indent : 0;
+              const fu = UNITS[ln.size] * k;
+              const rowW = Math.min(NOTES_WRAP_W, blockMax - ind);
+              let m = measureWrapped(ctx, ln.t, fu, rowW);
+              let fit;
+              if (m.n > 1) {
+                // only slightly too wide (e.g. the 11.5px minimum font on a
+                // small board): shrink onto one line instead of wrapping
+                const natural = measureWrapped(ctx, ln.t, fu, 1e6).w;
+                if (natural <= rowW * 1.25) { fit = rowW; m = { ...m, n: 1, w: rowW }; }
+              }
+              const step = (li === 0 && o.title ? (compact ? 4.8 : 6.2) : (compact ? 4.0 : 5.2)) * k;
+              h += step + (m.n - 1) * m.lineH;
+              return { ...ln, ind, fu, m, step, fit };
+            });
+            return { rows, h };
+          };
+          let k = 1, lay = layoutRows(1);
+          while (o.box_h && lay.h > o.box_h + 0.5 && k > 0.72) { k *= 0.93; lay = layoutRows(k); }
+          const rows = lay.rows;
+          const blockW = o.wrap_w || Math.max(...rows.map(r => r.m.w + r.ind));
           let used = 0, yy = ny;
-          for (let li = 0; li < lines.length; li++) {
-            const ln = lines[li];
+          for (let li = 0; li < rows.length; li++) {
+            const ln = rows[li];
             const f = Math.max(0, Math.min(1, (frac * total - used) / ln.t.length));
             if (f > 0) {
-              drawText(ctx, rnd, ln.t, [nx + (li > 0 ? (compact ? 1.5 : 2) : 0), yy],
-                ln.size, color(o.color), f, "left");
+              // Arabic notes are a right-aligned list inside the same block
+              const ax = rtl ? nx + blockW - ln.ind : nx + ln.ind;
+              drawText(ctx, rnd, ln.t, [ax, yy], ln.fu, color(o.color), f,
+                rtl ? "right" : "left", ln.fit, undefined, Math.min(NOTES_WRAP_W, blockMax - ln.ind));
             }
             used += ln.t.length;
-            const step = li === 0 && o.title ? (compact ? 4.8 : 6.2) : (compact ? 4.0 : 5.2);
-            yy += step;
+            yy += ln.step + (ln.m.n - 1) * ln.m.lineH;
           }
           break;
         }
@@ -563,7 +668,7 @@
           if (o.label && frac > 0.5) {
             const lp2 = o.label_at || [o.at[0] + 2.5, o.at[1] - 2.5];
             drawText(ctx, rnd, o.label, lp2, "s", color(o.color), (frac - 0.5) / 0.5,
-              o.label_at ? "center" : "left");
+              o.label_at ? "center" : "left", LABEL_FIT_W);
           }
           break;
         }
@@ -657,6 +762,7 @@
     const ctx = S.userCv.getContext("2d");
     ctx.clearRect(0, 0, S.userCv.width, S.userCv.height);
     for (const st of S.userStrokes) {
+      if (st.shape) { drawUserShape(ctx, st); continue; }
       ctx.save();
       if (st.eraser) ctx.globalCompositeOperation = "destination-out";
       strokePts(ctx, st.pts.map(px), 1, st.eraser ? "#000" : st.color, lw(st.eraser ? 2.4 : st.size));
@@ -713,7 +819,6 @@
   // ---------- lesson playback ----------
   async function playStep(step) {
     const ops = (step.board || []).map(o => ({ op: o, seed: (S.opSeedCounter++ * 2654435761) >>> 0 }));
-    if (S.lessonSlides) renderLessonSlide(step);
     let dur = step.dur || Math.max(2.2, String(step.say || "").split(/\s+/).length * 0.36);
     let src = null;
     let audioEnded = true;   // true while there is no source; set false when one starts
@@ -738,16 +843,14 @@
     }
 
     await waitWhilePaused();
-    setCaption(S.lessonSlides ? "" : (step.say || ""));
+    setCaption(step.say || "");
 
     // Clear and targeted erase are agent actions, not drawable marks.
-    if (!S.lessonSlides) {
-      for (const item of ops) {
-        if (item.op.op === "clear") clearAgent();
-        if (item.op.op === "erase") eraseAgent(item.op.targets || [item.op.target]);
-      }
+    for (const item of ops) {
+      if (item.op.op === "clear") clearAgent();
+      if (item.op.op === "erase") eraseAgent(item.op.targets || [item.op.target]);
     }
-    const drawable = S.lessonSlides ? [] : ops.filter(x => !["clear", "erase"].includes(x.op.op));
+    const drawable = ops.filter(x => !["clear", "erase"].includes(x.op.op));
 
     const total = drawable.reduce((s, x) => s + opCost(x.op), 0) || 1;
     let t0 = 0;
@@ -874,7 +977,7 @@
     if (replay) replay.style.display = S.lectureStarted ? "block" : "none";
     if (button) {
       button.textContent = S.lectureCompleted ? "✓ اكتملت المحاضرة · إعادة التشغيل" :
-        !S.lectureStarted ? "ابدأ المحاضرة ←" :
+        !S.lectureStarted ? "ابدأ المحاضرة ▶" :
         S.paused ? "▶ استئناف المحاضرة" : "⏸ إيقاف مؤقت";
       button.setAttribute("aria-pressed", String(S.paused));
       button.classList.toggle("is-paused", S.paused);
@@ -928,8 +1031,35 @@
     }
   }
 
+  // The guard below exists to undo Gradio's AUTOMATIC scrolls (focus jumps
+  // after submit, chat updates). A scroll the learner makes themselves must
+  // win: when the page scrolls right after a wheel / touch / scroll key /
+  // scrollbar press, the page is handed back for the rest of this lesson
+  // instead of being yanked to the board. (A wheel over the chat log that
+  // only scrolls the log does not move the page, so it changes nothing.)
+  let userScrollIntentAt = 0;
+  const markIntent = () => { userScrollIntentAt = Date.now(); };
+  const SCROLL_KEYS = new Set(["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "]);
+  window.addEventListener("wheel", markIntent, { passive: true });
+  window.addEventListener("touchmove", markIntent, { passive: true });
+  window.addEventListener("keydown", (e) => {
+    const t = e.target;   // typing in the question box is not scrolling
+    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+    if (SCROLL_KEYS.has(e.key)) markIntent();
+  });
+  window.addEventListener("mousedown", (e) => {
+    // a press on the page scrollbar (outside the document's client area)
+    if (e.clientX >= document.documentElement.clientWidth ||
+        e.clientY >= document.documentElement.clientHeight) markIntent();
+  });
+
   window.addEventListener("scroll", () => {
     if (Date.now() > S.keepBoardUntil) return;
+    if (Date.now() - userScrollIntentAt < 1000) {
+      S.keepBoardUntil = 0;            // the learner is scrolling: let go
+      clearTimeout(S.scrollTid);
+      return;
+    }
     clearTimeout(S.scrollTid);
     S.scrollTid = setTimeout(keepBoardInView, 45);
   }, { passive: true });
@@ -953,7 +1083,6 @@
       S.stopFlag = true;                          // fast-forward whatever is playing
       setTimeout(() => { S.stopFlag = false; }, 50);
       S.queue = [];
-      setLessonSlideMode(false);
       // Gradio may focus the transcript/input after submit, which scrolls the
       // board header out of view right as drawing begins. Keep the whole board
       // visible for the teaching part of the turn.
@@ -962,9 +1091,6 @@
     }
     S.voiceOn = p.voice !== false;
     if (p.completion_text) S.completionText = p.completion_text;
-    if (p.completion_text && p.completion_text.includes("المحاضرة") && (p.steps || []).length) {
-      setLessonSlideMode(true, p.lesson_total);
-    }
     // the agent asks for a bigger stage when the lesson is drawing-heavy
     if (p.big !== undefined) setBoardBig(!!p.big);
     if (p.status_detail !== undefined) setStatus(p.status_detail, p.status);
@@ -1033,94 +1159,6 @@
     el.classList.toggle("show", !!text);
   }
 
-  function setLessonSlideMode(enabled, total = 0) {
-    S.lessonSlides = !!enabled;
-    S.lessonSlideTotal = Number(total) || S.lessonSlideTotal || 10;
-    const host = document.getElementById("tutori-board-mount");
-    if (host) host.classList.toggle("lesson-slides-active", S.lessonSlides);
-    if (!S.lessonSlides) {
-      S.lessonSlideIndex = 0;
-      const deck = document.getElementById("tutori-slide-deck");
-      if (deck) deck.replaceChildren();
-    }
-  }
-
-  function renderLessonSlide(step) {
-    const deck = document.getElementById("tutori-slide-deck");
-    if (!deck) return;
-    const ops = Array.isArray(step.board) ? step.board : [];
-    const title = ops.find(op => op.op === "title")?.text || "فكرة هذا الجزء";
-    const boxes = ops.filter(op => op.op === "box" && op.label);
-    const decision = ops.find(op => op.op === "polygon" && op.label);
-    const notes = ops.filter(op => op.op === "text" && op.text).map(op => op.text);
-    const colors = ["#2563eb", "#ea580c", "#15803d", "#7c3aed"];
-    const createNode = (op, i, extraClass = "") => {
-      const node = document.createElement("div");
-      node.className = `lesson-slide-node ${extraClass}${String(op.label || "").length > 25 ? " is-compact" : ""}`;
-      node.style.setProperty("--node-color", colors[i % colors.length]);
-      String(op.label || "").split(/\n+/).filter(Boolean).forEach(line => {
-        const span = document.createElement("span");
-        span.textContent = line;
-        node.appendChild(span);
-      });
-      return node;
-    };
-
-    S.lessonSlideIndex += 1;
-    const total = Math.max(S.lessonSlideTotal, S.lessonSlideIndex);
-    const header = document.createElement("header");
-    header.className = "lesson-slide-header";
-    const meta = document.createElement("div");
-    meta.className = "lesson-slide-meta";
-    meta.textContent = `المحاضرة التعليمية · الجزء ${S.lessonSlideIndex} من ${total}`;
-    const heading = document.createElement("h2");
-    heading.textContent = title;
-    const progress = document.createElement("div");
-    progress.className = "lesson-slide-progress";
-    const bar = document.createElement("span");
-    bar.style.width = `${Math.min(100, S.lessonSlideIndex / total * 100)}%`;
-    progress.appendChild(bar);
-    header.append(meta, heading, progress);
-
-    const diagram = document.createElement("section");
-    diagram.className = `lesson-slide-diagram${decision ? " has-decision" : ""}`;
-    diagram.setAttribute("aria-label", "الرسم التوضيحي للجزء");
-    if (decision) diagram.appendChild(createNode(decision, 1, "lesson-slide-diamond"));
-    const flow = document.createElement("div");
-    flow.className = `lesson-slide-flow${decision ? " lesson-slide-branches" : ""}`;
-    const ordered = [...boxes].sort((a, b) => (b.at?.[0] || 0) - (a.at?.[0] || 0));
-    ordered.forEach((op, i) => {
-      if (i && !decision) {
-        const arrow = document.createElement("span");
-        arrow.className = "lesson-slide-arrow";
-        arrow.setAttribute("aria-hidden", "true");
-        arrow.textContent = "←";
-        flow.appendChild(arrow);
-      }
-      flow.appendChild(createNode(op, i));
-    });
-    if (!ordered.length) {
-      const fallback = document.createElement("p");
-      fallback.className = "lesson-slide-fallback";
-      fallback.textContent = notes[0] || String(step.say || "").split(/[.!؟]/)[0];
-      flow.appendChild(fallback);
-    }
-    diagram.appendChild(flow);
-
-    const note = document.createElement("p");
-    note.className = "lesson-slide-note";
-    note.textContent = notes[0] || (decision ? "تأمل مساري القرار، ثم استمع لنتيجة كل مسار." : "اتبع الفكرة من اليمين إلى اليسار.");
-    const narration = document.createElement("div");
-    narration.className = "lesson-slide-narration";
-    const label = document.createElement("span");
-    label.className = "lesson-slide-narration-label";
-    label.textContent = "الشرح الصوتي";
-    const words = document.createElement("p");
-    words.textContent = step.say || "";
-    narration.append(label, words);
-    deck.replaceChildren(header, diagram, note, narration);
-  }
-
   function setStatus(text, mode) {
     const el = document.getElementById("tutori-status");
     if (!el) return;
@@ -1148,61 +1186,119 @@
     S.userCv.addEventListener("pointerdown", ev => {
       actx();
       S.userCv.setPointerCapture(ev.pointerId);
-      cur = {
-        color: S.tool.color, size: S.tool.size,
-        eraser: S.tool.mode === "eraser", pts: [toLogical(ev)],
-      };
+      const p = toLogical(ev);
+      const shape = ["line", "rect", "ellipse"].includes(S.tool.mode) ? S.tool.mode : null;
+      cur = shape
+        ? { color: S.tool.color, size: S.tool.size, shape, a: p, b: p }
+        : { color: S.tool.color, size: S.tool.size,
+            eraser: S.tool.mode === "eraser", pts: [p] };
       S.userStrokes.push(cur);
+      S.redoStack = [];               // a new mark ends the redo history
     });
     S.userCv.addEventListener("pointermove", ev => {
       if (!cur) return;
-      cur.pts.push(toLogical(ev));
+      if (cur.shape) cur.b = toLogical(ev);
+      else cur.pts.push(toLogical(ev));
       redrawUser();
     });
-    const up = () => { cur = null; };
+    const up = () => {
+      // a click without a drag leaves a zero-size shape: drop it
+      if (cur?.shape && Math.hypot(cur.b[0] - cur.a[0], cur.b[1] - cur.a[1]) < 0.8) {
+        S.userStrokes.pop(); redrawUser();
+      }
+      cur = null;
+    };
     S.userCv.addEventListener("pointerup", up);
     S.userCv.addEventListener("pointercancel", up);
   }
 
+  // Learner shapes keep exact geometry (straight edges, real ellipse)
+  // instead of the smoothed freehand path.
+  function drawUserShape(ctx, st) {
+    const [ax, ay] = px(st.a), [bx, by] = px(st.b);
+    ctx.save();
+    ctx.strokeStyle = st.color; ctx.lineWidth = lw(st.size);
+    ctx.lineCap = "round"; ctx.lineJoin = "round";
+    ctx.beginPath();
+    if (st.shape === "line") { ctx.moveTo(ax, ay); ctx.lineTo(bx, by); }
+    else if (st.shape === "rect") ctx.rect(Math.min(ax, bx), Math.min(ay, by), Math.abs(bx - ax), Math.abs(by - ay));
+    else ctx.ellipse((ax + bx) / 2, (ay + by) / 2, Math.abs(bx - ax) / 2, Math.abs(by - ay) / 2, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
   const PEN_COLORS = ["#2563eb", "#dc2626", "#15803d", "#27272a", "#7c3aed"];
+
+  // 20px line icons (stroke = currentColor) for the board toolbar
+  const ICON = (d) => `<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+  const ICONS = {
+    pen: ICON('<path d="M4 20l4.5-1 10-10a2.1 2.1 0 0 0-3-3l-10 10L4 20z"/><path d="M14 7l3 3"/>'),
+    eraser: ICON('<path d="M8 20h12"/><path d="M5.5 14.5l8-8a2 2 0 0 1 2.8 0l2.2 2.2a2 2 0 0 1 0 2.8L12 18H8.5z"/><path d="M9 11l5 5"/>'),
+    line: ICON('<path d="M5 19L19 5"/>'),
+    rect: ICON('<rect x="4.5" y="6" width="15" height="12" rx="1.5"/>'),
+    ellipse: ICON('<circle cx="12" cy="12" r="7.5"/>'),
+    undo: ICON('<path d="M9 7L5 11l4 4"/><path d="M5 11h9a5 5 0 0 1 0 10h-2"/>'),
+    redo: ICON('<path d="M15 7l4 4-4 4"/><path d="M19 11h-9a5 5 0 0 0 0 10h2"/>'),
+    trash: ICON('<path d="M5 7h14"/><path d="M10 11v6M14 11v6"/><path d="M7 7l1 12h8l1-12"/><path d="M10 7V5h4v2"/>'),
+    board: ICON('<rect x="3.5" y="4.5" width="17" height="12" rx="1.5"/><path d="M12 16.5V20M8.5 20h7"/><path d="M7.5 12l3-3 2 2 4-4"/>'),
+  };
 
   function toolbarHTML() {
     const sw = PEN_COLORS.map(c =>
-      `<button class="tb-swatch" data-color="${c}" style="--c:${c}" title="قلم ${c}"></button>`).join("");
+      `<button class="tb-swatch" data-color="${c}" style="--c:${c}" title="لون القلم" aria-label="لون القلم"></button>`).join("");
+    const tool = (mode, title) =>
+      `<button class="tb-btn tb-icon tb-tool" data-mode="${mode}" title="${title}" aria-label="${title}">${ICONS[mode]}</button>`;
     return `
-      <div class="tb-group">${sw}</div>
-      <div class="tb-group">
-        <button class="tb-btn" id="tb-eraser" title="ممحاة">⌫</button>
-        <button class="tb-btn" id="tb-undo" title="تراجع عن آخر خط">↩</button>
-        <button class="tb-btn" id="tb-clear-mine" title="مسح رسوماتي">✕ رسوماتي</button>
-        <button class="tb-btn" id="tb-clear-all" title="مسح السبورة بالكامل">✕ الكل</button>
-      </div>
+      <div class="tb-title">${ICONS.board}<span class="talk-label">السبورة التفاعلية</span><span id="tutori-talking" class="talk-dot" title="المدرب يتحدث"></span></div>
       <div class="tb-spacer"></div>
-      <div class="tb-talk"><span id="tutori-talking" class="talk-dot"></span><span class="talk-label">المدرب الرقمي</span></div>`;
+      <div class="tb-group">
+        <button class="tb-btn tb-icon" id="tb-undo" title="تراجع" aria-label="تراجع">${ICONS.undo}</button>
+        <button class="tb-btn tb-icon" id="tb-redo" title="إعادة" aria-label="إعادة">${ICONS.redo}</button>
+        <button class="tb-btn tb-icon" id="tb-clear-mine" title="مسح رسوماتي" aria-label="مسح رسوماتي">${ICONS.trash}</button>
+        <button class="tb-btn tb-text" id="tb-clear-all" title="مسح السبورة بالكامل">مسح الكل</button>
+      </div>
+      <div class="tb-sep"></div>
+      <div class="tb-group">
+        ${tool("pen", "قلم")}${tool("eraser", "ممحاة")}${tool("line", "خط مستقيم")}${tool("rect", "مستطيل")}${tool("ellipse", "دائرة")}
+      </div>
+      <div class="tb-sep"></div>
+      <div class="tb-group">${sw}</div>`;
   }
 
   function bindToolbar(bar) {
+    S.redoStack = [];
+    const setActive = () => {
+      bar.querySelectorAll(".tb-tool").forEach(b => b.classList.toggle("active", b.dataset.mode === S.tool.mode));
+      bar.querySelectorAll(".tb-swatch").forEach(b =>
+        b.classList.toggle("active", S.tool.mode !== "eraser" && b.dataset.color === S.tool.color));
+    };
     bar.querySelectorAll(".tb-swatch").forEach(b => {
       b.addEventListener("click", () => {
-        S.tool.mode = "pen"; S.tool.color = b.dataset.color;
-        bar.querySelectorAll(".tb-swatch, .tb-btn").forEach(x => x.classList.remove("active"));
-        b.classList.add("active");
+        S.tool.color = b.dataset.color;
+        if (S.tool.mode === "eraser") S.tool.mode = "pen";   // a colour means drawing
+        setActive();
       });
     });
-    bar.querySelector('[data-color="#2563eb"]').classList.add("active");
-    bar.querySelector("#tb-eraser").addEventListener("click", (e) => {
-      S.tool.mode = "eraser";
-      bar.querySelectorAll(".tb-swatch, .tb-btn").forEach(x => x.classList.remove("active"));
-      e.currentTarget.classList.add("active");
+    bar.querySelectorAll(".tb-tool").forEach(b => {
+      b.addEventListener("click", () => { S.tool.mode = b.dataset.mode; setActive(); });
     });
+    S.tool.mode = "pen";
+    setActive();
     bar.querySelector("#tb-undo").addEventListener("click", () => {
-      S.userStrokes.pop(); redrawUser();
+      const st = S.userStrokes.pop();
+      if (st) S.redoStack.push(st);
+      redrawUser();
+    });
+    bar.querySelector("#tb-redo").addEventListener("click", () => {
+      const st = S.redoStack.pop();
+      if (st) S.userStrokes.push(st);
+      redrawUser();
     });
     bar.querySelector("#tb-clear-mine").addEventListener("click", () => {
-      S.userStrokes = []; redrawUser();
+      S.userStrokes = []; S.redoStack = []; redrawUser();
     });
     bar.querySelector("#tb-clear-all").addEventListener("click", () => {
-      S.userStrokes = []; redrawUser(); clearAgent(); setCaption("");
+      S.userStrokes = []; S.redoStack = []; redrawUser(); clearAgent(); setCaption("");
     });
   }
 
@@ -1214,7 +1310,6 @@
     host.innerHTML = `
       <div class="board-shell">
         <div class="board-toolbar" id="tutori-toolbar">${toolbarHTML()}</div>
-        <div class="lesson-slide-deck" id="tutori-slide-deck" dir="rtl" aria-live="polite"></div>
         <div class="board-wrap" id="tutori-wrap">
           <canvas id="cv-agent"></canvas>
           <canvas id="cv-live"></canvas>
@@ -1269,6 +1364,190 @@
   }
 
   bindSubmissionBridge();
+
+  // ---------- asking a question: voice recorder + pause-on-ask ----------
+  // One button: first press starts recording (and pauses the lecture right
+  // away), second press sends. The recording travels to the server as a
+  // data URL through a hidden Gradio textbox + button (see app.py).
+  function bindAskControls() {
+    if (window.__tutoriAskControls) return;
+    window.__tutoriAskControls = true;
+    const R = { rec: null, chunks: [], stream: null, startedAt: 0, tick: 0,
+                cancelled: false, mime: "" };
+    const MAX_SECONDS = 60;
+    const micBtn = () => document.getElementById("tutori-mic");
+    function setAskStatus(text, kind) {
+      const el = document.getElementById("tutori-ask-status");
+      if (!el) return;
+      el.textContent = text;
+      el.dataset.kind = kind || "";
+    }
+    function setMicUi(state) {
+      const b = micBtn();
+      if (!b) return;
+      b.classList.toggle("is-recording", state === "recording");
+      b.classList.toggle("is-busy", state === "sending");
+      b.disabled = state === "sending";
+      document.querySelectorAll("[data-mic]").forEach(m =>
+        m.classList.toggle("is-recording", state === "recording"));
+      const label = b.querySelector(".ask-mic-label");
+      if (label) label.textContent = state === "recording" ? "إرسال التسجيل"
+        : state === "sending" ? "جارٍ الإرسال…" : "سجّل سؤالك";
+    }
+    // The learner starts asking: hold the lecture where it is.
+    function pauseForQuestion() {
+      if (S.lectureStarted && !S.lectureCompleted && !S.paused) setPaused(true);
+    }
+    function pickMime() {
+      if (!window.MediaRecorder) return "";
+      return ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"]
+        .find(t => MediaRecorder.isTypeSupported?.(t)) || "";
+    }
+    function stopTracks() {
+      R.stream?.getTracks().forEach(t => t.stop());
+      R.stream = null;
+      clearInterval(R.tick);
+    }
+    function sendRecording(dataUrl) {
+      const sink = document.querySelector("#tutori-voice-sink textarea, #tutori-voice-sink input");
+      const node = document.getElementById("tutori-voice-send");
+      const button = node?.matches("button") ? node : node?.querySelector("button");
+      if (!sink || !button) {
+        setAskStatus("تعذّر إرسال التسجيل. حدّث الصفحة وحاول مرة أخرى.", "error");
+        setMicUi("idle");
+        return;
+      }
+      const proto = sink.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(proto, "value").set.call(sink, dataUrl);
+      sink.dispatchEvent(new Event("input", { bubbles: true }));
+      // let Gradio take the new value before the click reads it
+      setTimeout(() => {
+        button.click();
+        setAskStatus("تم إرسال سؤالك… المدرب يجهّز الإجابة.", "sent");
+        setMicUi("idle");
+      }, 80);
+    }
+    async function startRecording() {
+      if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+        setAskStatus("المتصفح لا يدعم التسجيل الصوتي. اكتب سؤالك بدلًا من ذلك.", "error");
+        return;
+      }
+      pauseForQuestion();            // stop talking the moment they want to talk
+      actx();
+      try {
+        R.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (e) {
+        setAskStatus("لم نتمكن من استخدام الميكروفون. اسمح للمتصفح باستخدامه ثم حاول مرة أخرى.", "error");
+        return;
+      }
+      R.mime = pickMime();
+      R.chunks = [];
+      R.cancelled = false;
+      R.rec = new MediaRecorder(R.stream, R.mime ? { mimeType: R.mime } : undefined);
+      R.rec.ondataavailable = e => { if (e.data && e.data.size) R.chunks.push(e.data); };
+      R.rec.onstop = () => {
+        const seconds = (Date.now() - R.startedAt) / 1000;
+        stopTracks();
+        const rec = R.rec; R.rec = null;
+        if (R.cancelled) { setAskStatus("تم إلغاء التسجيل.", ""); setMicUi("idle"); return; }
+        if (seconds < 0.8 || !R.chunks.length) {
+          setAskStatus("التسجيل قصير جدًا. اضغط وتكلّم ثم اضغط مرة أخرى للإرسال.", "error");
+          setMicUi("idle");
+          return;
+        }
+        setMicUi("sending");
+        const blob = new Blob(R.chunks, { type: rec?.mimeType || R.mime || "audio/webm" });
+        const reader = new FileReader();
+        reader.onload = () => sendRecording(String(reader.result || ""));
+        reader.onerror = () => { setAskStatus("تعذّر قراءة التسجيل. حاول مرة أخرى.", "error"); setMicUi("idle"); };
+        reader.readAsDataURL(blob);
+      };
+      R.rec.start(250);
+      R.startedAt = Date.now();
+      setMicUi("recording");
+      const showTime = () => {
+        const s = Math.floor((Date.now() - R.startedAt) / 1000);
+        setAskStatus(`● جارٍ التسجيل ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")} · ` +
+          "اضغط «إرسال التسجيل» عند الانتهاء، أو Esc للإلغاء.", "recording");
+        if (s >= MAX_SECONDS) R.rec?.state === "recording" && R.rec.stop();
+      };
+      showTime();
+      R.tick = setInterval(showTime, 500);
+    }
+
+    document.addEventListener("click", e => {
+      // «سجّل سؤالك» and the small mic inside the question box
+      const b = e.target.closest?.("#tutori-mic, [data-mic]");
+      if (!b || micBtn()?.disabled) return;
+      e.preventDefault();
+      if (R.rec && R.rec.state === "recording") R.rec.stop();
+      else startRecording();
+    });
+
+    // ---- lecture action tiles ----
+    function askTutor(text) {
+      const input = document.querySelector("#lesson-question textarea");
+      const node = document.getElementById("send-btn");
+      const send = node?.matches("button") ? node : node?.querySelector("button");
+      if (!input || !send) return;
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(input, text);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      setTimeout(() => send.click(), 80);       // same path as typing + «إرسال»
+    }
+    function lectureLog() {
+      return [...document.querySelectorAll("#tutori-chat .message")]
+        .map(m => ({ user: !!m.closest(".user, [data-testid='user']"), text: m.innerText.trim() }))
+        .filter(m => m.text);
+    }
+    function exportWord() {
+      const log = lectureLog();
+      if (!log.length) {
+        setAskStatus("لا يوجد محتوى للتصدير بعد. ابدأ المحاضرة أو اطرح سؤالًا أولًا.", "error");
+        return;
+      }
+      const esc = s => s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+      const title = document.querySelector("#tutori-header .tag")?.textContent?.trim() || "محاضرة المدرب الرقمي";
+      const body = log.map(m => `<p class="${m.user ? "q" : "a"}"><b>${m.user ? "سؤال المتدرب" : "المدرب"}:</b> ${esc(m.text).replace(/\n/g, "<br>")}</p>`).join("");
+      // Word opens an HTML document saved as .doc, right-to-left intact
+      const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><title>${esc(title)}</title><style>body{direction:rtl;font-family:Tahoma,Arial;font-size:13pt;line-height:1.7}h1{font-size:18pt}.q{color:#1e3a8a}</style></head><body dir="rtl"><h1>${esc(title)}</h1>${body}</body></html>`;
+      const url = URL.createObjectURL(new Blob(["﻿", html], { type: "application/msword" }));
+      const a = Object.assign(document.createElement("a"), { href: url, download: "محاضرة-المدرب-الرقمي.doc" });
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      setAskStatus("تم تصدير سجل المحاضرة إلى ملف Word.", "sent");
+    }
+    async function shareLink() {
+      const url = location.origin + location.pathname;
+      try {
+        await navigator.clipboard.writeText(url);
+        setAskStatus("تم نسخ رابط القاعة. أرسله للمتدربين.", "sent");
+      } catch (err) {
+        setAskStatus(`انسخ الرابط وأرسله للمتدربين: ${url}`, "");
+      }
+    }
+    document.addEventListener("click", e => {
+      const tile = e.target.closest?.(".action-tile");
+      if (!tile) return;
+      e.preventDefault();
+      if (tile.dataset.ask) askTutor(tile.dataset.ask);
+      else if (tile.dataset.action === "share") shareLink();
+      else if (tile.dataset.action === "export") exportWord();
+    });
+    document.addEventListener("keydown", e => {
+      if (e.key === "Escape" && R.rec && R.rec.state === "recording") {
+        R.cancelled = true;
+        R.rec.stop();
+      }
+    });
+    // Typing a question is asking too: pause as soon as the first character
+    // lands in an empty box (not on every keystroke, so they can resume).
+    document.addEventListener("input", e => {
+      const t = e.target;
+      if (!t?.closest?.("#lesson-question")) return;
+      if (t.value && t.value.trim().length === 1) pauseForQuestion();
+    }, true);
+  }
+  bindAskControls();
 
   // Gradio renders the DOM asynchronously; retry until the mount node exists.
   const tryMount = setInterval(() => {

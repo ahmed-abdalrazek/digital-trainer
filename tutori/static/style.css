@@ -192,10 +192,9 @@ body.board-big .side-col {
   flex: 0 0 clamp(320px, 22vw, 400px) !important;
   max-width: 400px !important;
 }
-.board-big .side-col .chip-row,
-.board-big .side-col #mic-box,
-body.board-big .side-col .chip-row,
-body.board-big .side-col #mic-box { opacity: .35; transition: opacity .5s ease; }
+/* The mic and suggestion chips are how the learner asks a question; they
+   used to fade to 35% here while the board was big, which read as
+   "disabled" for the rest of the lesson. They stay fully visible now. */
 
 @media (min-width: 1181px) {
   .studio-row {
@@ -324,77 +323,6 @@ body.board-big .side-col #mic-box { opacity: .35; transition: opacity .5s ease; 
   border-width: 1px;
   opacity: 1;
   transform: translateY(0);
-}
-
-/* Prepared lessons use clean infographic slides; interactive turns retain the canvas board. */
-.lesson-slide-deck { display: none; }
-#tutori-board-mount.lesson-slides-active .board-toolbar,
-#tutori-board-mount.lesson-slides-active .board-wrap,
-#tutori-board-mount.lesson-slides-active .board-caption { display: none !important; }
-#tutori-board-mount.lesson-slides-active .lesson-slide-deck {
-  display: grid;
-  grid-template-rows: auto minmax(250px, 1fr) auto auto;
-  gap: clamp(12px, 1.8vw, 20px);
-  width: 100%;
-  height: min(90vh, 980px);
-  min-height: 720px;
-  overflow: visible;
-  padding: clamp(20px, 2.6vw, 36px);
-  border: 1px solid #dbe3ee;
-  border-radius: 22px;
-  background:
-    radial-gradient(ellipse at 12% 8%, rgba(37, 99, 235, .08), transparent 34%),
-    radial-gradient(ellipse at 88% 92%, rgba(124, 58, 237, .07), transparent 34%),
-    linear-gradient(145deg, #fff 0%, #f7f9fc 100%);
-  box-shadow: 0 16px 40px rgba(20, 36, 59, .11);
-  color: #182334;
-  direction: rtl;
-}
-.lesson-slide-header { display: grid; gap: 8px; }
-.lesson-slide-meta { color: #52657c; font-size: 13px; font-weight: 700; }
-.lesson-slide-header h2 {
-  margin: 0; color: #172a45; font-size: clamp(22px, 2.5vw, 32px);
-  line-height: 1.35; font-weight: 800; text-align: right;
-}
-.lesson-slide-progress { height: 5px; overflow: hidden; border-radius: 8px; background: #e5eaf1; }
-.lesson-slide-progress span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #2563eb, #14b8a6); transition: width .35s ease; }
-.lesson-slide-diagram { display: grid; align-content: center; justify-items: center; gap: clamp(18px, 3vh, 30px); min-width: 0; min-height: 0; }
-.lesson-slide-diagram.has-decision { grid-template-rows: auto 1fr; width: 100%; }
-.lesson-slide-flow { display: flex; align-items: center; justify-content: center; gap: clamp(8px, 1.6vw, 20px); width: 100%; direction: rtl; }
-.lesson-slide-node {
-  display: flex; flex: 1 1 150px; min-width: 0; min-height: 105px;
-  flex-direction: column; align-items: center; justify-content: center; gap: 7px;
-  padding: 16px 14px; border: 1.5px solid color-mix(in srgb, var(--node-color) 48%, white);
-  border-radius: 18px; background: color-mix(in srgb, var(--node-color) 7%, white);
-  box-shadow: 0 7px 18px rgba(27, 42, 61, .07);
-  color: #1e293b; font-size: clamp(16px, 1.65vw, 21px); line-height: 1.45;
-  font-weight: 750; text-align: center;
-}
-.lesson-slide-node span { display: block; }
-.lesson-slide-node.is-compact { font-size: clamp(14px, 1.35vw, 18px); }
-.lesson-slide-arrow { flex: 0 0 auto; color: #8b9aab; font-size: 28px; font-weight: 500; }
-.lesson-slide-branches { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); justify-items: stretch; gap: 14px; width: min(100%, 760px); }
-.lesson-slide-branches .lesson-slide-node { min-height: 82px; }
-.lesson-slide-diamond {
-  position: relative; display: grid; place-content: center;
-  flex: 0 0 auto; width: clamp(190px, 22vw, 260px); height: clamp(112px, 14vh, 150px);
-  min-height: 0; padding: 14px 32px; border: 0; border-radius: 0;
-  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
-  background: #eab455; color: #7c4a0a; box-shadow: none;
-}
-.lesson-slide-diamond::before { content: ""; position: absolute; inset: 2px; clip-path: inherit; background: #fff8e8; }
-.lesson-slide-diamond span { position: relative; z-index: 1; transform: none; }
-.lesson-slide-note { margin: 0; padding: 10px 14px; border-right: 3px solid #14b8a6; color: #43556c; font-size: 14px; line-height: 1.7; }
-.lesson-slide-narration { padding: 13px 16px; border: 1px solid #e1e8f0; border-radius: 15px; background: rgba(255,255,255,.78); }
-.lesson-slide-narration-label { color: #59718d; font-size: 12px; font-weight: 800; }
-.lesson-slide-narration p { margin: 5px 0 0; color: #26364a; font-size: clamp(14px, 1.35vw, 17px); line-height: 1.8; }
-.lesson-slide-fallback { margin: 0; color: #334155; font-size: 20px; text-align: center; }
-@media (max-width: 680px) {
-  #tutori-board-mount.lesson-slides-active .lesson-slide-deck { height: min(90vh, 820px); min-height: 620px; padding: 18px; border-radius: 17px; }
-  .lesson-slide-flow { flex-wrap: wrap; gap: 9px; }
-  .lesson-slide-node { flex-basis: 40%; min-height: 82px; padding: 12px 9px; }
-  .lesson-slide-arrow { font-size: 21px; }
-  .lesson-slide-diamond { flex-basis: 0; width: 120px; height: 120px; }
 }
 
 /* board action row: visible in the first viewport */
@@ -591,10 +519,6 @@ body.board-big .side-col #mic-box { opacity: .35; transition: opacity .5s ease; 
   }
   .board-big .board-col,
   body.board-big .board-col { flex-grow: 1 !important; }
-  .board-big .side-col .chip-row,
-  .board-big .side-col #mic-box,
-  body.board-big .side-col .chip-row,
-  body.board-big .side-col #mic-box { opacity: 1; }
   .board-wrap { height: clamp(320px, calc(100vh - 348px), 560px); }
 }
 @media (max-width: 800px) {
@@ -1084,3 +1008,513 @@ body.board-big .side-col #mic-box { opacity: .35; transition: opacity .5s ease; 
   #demo-start-lecture-btn { justify-self: stretch; }
   #replay-btn { justify-self: stretch; }
 }
+
+/* ===== question composer (replaces the gr.Audio widget) =====
+   One card: heading, the question box, then [سجّل سؤالك] [إرسال] side by
+   side, and a live status line. Arabic, right-to-left throughout. */
+.question-panel { direction: rtl; gap: 10px !important; }
+.ask-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.ask-title { font-weight: 800; font-size: 17px; color: var(--ink); }
+.ask-sub { font-size: 13px; color: var(--ink-soft); }
+.question-panel #lesson-question textarea {
+  min-height: 64px !important;
+  border-radius: 12px !important;
+  padding: 10px 12px !important;
+  font-size: 15px !important;
+  line-height: 1.6 !important;
+}
+.question-panel #lesson-question textarea:focus {
+  border-color: #2563eb !important;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, .18) !important;
+  outline: none !important;
+}
+.ask-actions {
+  direction: rtl;
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  gap: 8px !important;
+  align-items: stretch !important;
+}
+.ask-actions > * { min-width: 0 !important; }
+.ask-mic-wrap { flex: 1 1 auto !important; padding: 0 !important; overflow: visible !important; }
+.ask-mic {
+  width: 100%;
+  min-height: 46px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1.5px solid #c9bfa4;
+  border-radius: 12px;
+  background: #fff;
+  color: var(--ink);
+  font: 700 15px/1.2 var(--sans);
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, transform .1s ease;
+}
+.ask-mic:hover { background: #fef3c7; border-color: #e3b94d; }
+.ask-mic:active { transform: translateY(1px); }
+.ask-mic:focus-visible { outline: 3px solid rgba(37, 99, 235, .35); outline-offset: 2px; }
+.ask-mic-dot {
+  width: 12px; height: 12px; border-radius: 50%;
+  background: #dc2626; box-shadow: 0 0 0 3px rgba(220, 38, 38, .15);
+  flex: none;
+}
+.ask-mic.is-recording { background: #dc2626; border-color: #b91c1c; color: #fff; }
+.ask-mic.is-recording .ask-mic-dot {
+  background: #fff; box-shadow: none; border-radius: 3px;      /* ■ = stop & send */
+  animation: ask-pulse 1s ease-in-out infinite;
+}
+.ask-mic.is-busy { opacity: .7; cursor: progress; }
+@keyframes ask-pulse { 50% { opacity: .35; } }
+.question-panel #send-btn {
+  flex: 0 0 112px !important;
+  min-width: 112px !important;
+  min-height: 46px !important;
+  border-radius: 12px !important;
+  font-size: 15px !important;
+  font-weight: 800 !important;
+  box-shadow: none !important;
+}
+.question-panel #send-btn:hover { transform: none !important; }
+.ask-status {
+  min-height: 20px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+.ask-status[data-kind="recording"] { color: #b91c1c; font-weight: 700; }
+.ask-status[data-kind="error"] { color: #b45309; font-weight: 700; }
+.ask-status[data-kind="sent"] { color: #15803d; }
+@media (prefers-reduced-motion: reduce) {
+  .ask-mic.is-recording .ask-mic-dot { animation: none; }
+}
+/* Gradio wraps each gr.HTML in an LTR block: make the composer's own
+   pieces right-to-left and right-aligned explicitly. */
+.ask-head, .ask-status { direction: rtl !important; text-align: right !important; width: 100%; }
+.ask-head { justify-content: flex-start; }
+.question-panel .ask-actions { height: 48px !important; }
+.question-panel .ask-actions > * { height: 48px !important; margin: 0 !important; }
+.question-panel .ask-mic { height: 48px; min-height: 48px; }
+.question-panel #send-btn,
+.question-panel button#send-btn {
+  height: 48px !important;
+  min-height: 48px !important;
+  max-height: 48px !important;
+  padding: 0 16px !important;
+  font: 800 16px/1 var(--sans) !important;
+}
+.ask-mic-wrap > *, .ask-mic-wrap .prose, .ask-mic-wrap .html-container {
+  padding: 0 !important; margin: 0 !important; height: 100% !important;
+}
+
+/* =====================================================================
+   PLATFORM THEME — matches the Digital Trainer platform (assets/theme.css
+   at the repo root): deep-teal background, glassy dark cards with a thin
+   border, teal (#2ad7be) accents and gradient primary buttons, Tajawal.
+   It is the last layer on purpose: it supersedes the warm-paper look
+   above. The whiteboard surface itself stays light, because the lesson
+   drawings' marker colours are designed for a white board.
+   ===================================================================== */
+:root, .gradio-container, body.dark, body {
+  --pt-bg: #061311;
+  --pt-card: linear-gradient(145deg, #0d2622, #091d1a);
+  --pt-line: #23453e;
+  --pt-line-2: #2b5149;
+  --pt-field: #102a26;
+  --pt-ink: #e8f6f1;
+  --pt-muted: #91aaa2;
+  --pt-teal: #2ad7be;
+  --pt-teal-2: #189d8b;
+  --pt-font: "Tajawal", "Alexandria", "IBM Plex Sans Arabic", Tahoma, "Segoe UI", Arial, sans-serif;
+  --body-background-fill: var(--pt-bg) !important;
+  --body-text-color: var(--pt-ink) !important;
+  --block-label-text-color: var(--pt-ink) !important;
+  --block-title-text-color: var(--pt-ink) !important;
+  --color-accent: var(--pt-teal) !important;
+  --color-accent-soft: #12443b !important;
+  --slider-color: var(--pt-teal) !important;
+  --checkbox-background-color-selected: var(--pt-teal) !important;
+  --checkbox-border-color-selected: var(--pt-teal) !important;
+  --input-background-fill: var(--pt-field) !important;
+  --input-border-color: var(--pt-line-2) !important;
+  --border-color-primary: var(--pt-line) !important;
+}
+body, .gradio-container {
+  background: radial-gradient(circle at 70% -20%, #123e37 0, #061311 42%), #061311 !important;
+  color: var(--pt-ink) !important;
+  font-family: var(--pt-font) !important;
+}
+.gradio-container button, .gradio-container input, .gradio-container textarea,
+.gradio-container select, .gradio-container .prose { font-family: var(--pt-font) !important; }
+
+/* ---- header: the platform's brand block ---- */
+#tutori-header { color: var(--pt-ink); }
+.tutori-brand { display: flex; align-items: center; gap: 11px; }
+.tutori-brand .brand-mark {
+  width: 42px; height: 42px; border-radius: 11px; flex: none;
+  display: grid; place-items: center;
+  background: var(--pt-teal); color: #06201d;
+  font-size: 22px; font-weight: 800;
+}
+.tutori-brand strong { display: block; color: var(--pt-ink); font-size: 20px; font-weight: 800; line-height: 1.25; }
+.tutori-brand small { display: block; color: #82aea2; font-size: 12px; }
+#tutori-header .tag { margin-top: 8px; color: var(--pt-muted); font-size: 13px; }
+#tutori-header .live-student-tag,
+#tutori-live-status {
+  color: #69e5c9 !important; background: #123e35 !important;
+  border: 1px solid #236353 !important; border-radius: 30px !important;
+  padding: 7px 12px !important; font-size: 12px !important;
+}
+#demo-start-lecture-btn, #demo-start-lecture-btn button {
+  border: 1px solid var(--pt-teal) !important;
+  border-radius: 10px !important;
+  background: linear-gradient(135deg, var(--pt-teal), var(--pt-teal-2)) !important;
+  color: #04201b !important;
+  font: 800 15px/1.2 var(--pt-font) !important;
+  box-shadow: 0 8px 22px #2ad7be22 !important;
+}
+#demo-start-lecture-btn:hover, #demo-start-lecture-btn button:hover { background: #3ce7ce !important; }
+#demo-start-lecture-btn.is-paused, #demo-start-lecture-btn button.is-paused {
+  background: #443719 !important; border-color: #e7b556 !important; color: #f4ce77 !important;
+}
+#replay-btn, #replay-btn button {
+  background: var(--pt-field) !important; border: 1px solid var(--pt-line-2) !important;
+  color: #ccf6ea !important; border-radius: 10px !important; box-shadow: none !important;
+}
+
+/* ---- board: dark platform frame around a light whiteboard ---- */
+.board-shell {
+  border: 1px solid #28564c !important;
+  outline: none !important;
+  border-radius: 16px !important;
+  background: var(--pt-card) !important;
+  box-shadow: 0 16px 36px #00000030, inset 0 1px #74ecd21a !important;
+  overflow: hidden;
+}
+.board-toolbar { background: #0d2924 !important; border-bottom: 1px solid #28564c !important; }
+.tb-btn { border-color: #285148 !important; background: var(--pt-field) !important; color: #ccf6ea !important; box-shadow: none !important; }
+.tb-btn:hover { background: #173a34 !important; border-color: var(--pt-teal) !important; transform: none !important; }
+.tb-talk, .board-toolbar strong, .board-toolbar span { color: #a9c9bf !important; }
+.tb-swatch.active { box-shadow: 0 0 0 2px #0d2924, 0 0 0 4px var(--c) !important; }
+.board-status { background: #0a332c !important; color: #91ffe5 !important; border: 1px solid #1e5148 !important; }
+.board-caption {
+  background: #0b211e !important; color: var(--pt-ink) !important;
+  border-top: 1px solid #28564c !important; font-family: var(--pt-font) !important;
+}
+
+/* ---- question composer ---- */
+.question-panel {
+  border: 1px solid var(--pt-line) !important;
+  border-radius: 16px !important;
+  background: var(--pt-card) !important;
+  box-shadow: 0 12px 30px #00000024 !important;
+}
+.ask-title { color: var(--pt-ink) !important; }
+.ask-sub, .ask-status { color: var(--pt-muted) !important; }
+.question-panel #lesson-question textarea,
+.side-col textarea, .side-col input[type="text"] {
+  background: var(--pt-field) !important;
+  border: 1px solid var(--pt-line-2) !important;
+  color: var(--pt-ink) !important;
+  box-shadow: none !important;
+}
+#lesson-question textarea::placeholder { color: var(--pt-muted) !important; }
+.question-panel #lesson-question textarea:focus { border-color: var(--pt-teal) !important; box-shadow: 0 0 0 3px #2ad7be26 !important; }
+.ask-mic { background: var(--pt-field) !important; border-color: var(--pt-line-2) !important; color: #ccf6ea !important; }
+.ask-mic:hover { background: #173a34 !important; border-color: var(--pt-teal) !important; }
+.ask-mic.is-recording { background: #452226 !important; border-color: #e26a6a !important; color: #ffd9d9 !important; }
+.ask-mic.is-recording .ask-mic-dot { background: #f18e8e !important; }
+.question-panel #send-btn, .question-panel button#send-btn {
+  background: linear-gradient(135deg, var(--pt-teal), var(--pt-teal-2)) !important;
+  border: 1px solid var(--pt-teal) !important;
+  color: #04201b !important;
+}
+.question-panel #send-btn:hover { background: #3ce7ce !important; }
+.ask-status[data-kind="recording"] { color: #f18e8e !important; }
+.ask-status[data-kind="error"] { color: #f4ce77 !important; }
+.ask-status[data-kind="sent"] { color: #72e6c7 !important; }
+
+/* ---- lecture log: a platform card, no notebook lines ---- */
+#tutori-chat {
+  border: 1px solid var(--pt-line) !important;
+  border-radius: 16px !important;
+  background: var(--pt-card) !important;
+  box-shadow: 0 12px 30px #00000024 !important;
+}
+#tutori-chat .message-wrap, #tutori-chat .bubble-wrap, #tutori-chat .wrapper { background: transparent !important; }
+#tutori-chat label[data-testid="block-label"], #tutori-chat label[data-testid="block-label"].float {
+  background: #0d2622 !important; border: 1px solid var(--pt-line) !important;
+  color: var(--pt-ink) !important; box-shadow: none !important;
+}
+#tutori-chat .message, #tutori-chat .message *, #tutori-chat label span { color: var(--pt-ink) !important; }
+#tutori-chat .message {
+  background: var(--pt-field) !important; border: 1px solid var(--pt-line-2) !important;
+  border-radius: 12px !important; box-shadow: none !important; font-family: var(--pt-font) !important;
+}
+#tutori-chat .user .message, #tutori-chat [data-testid="user"] { background: #12463e !important; border-color: #236353 !important; }
+
+/* ---- suggestion chips: platform secondary buttons, not sticky notes ---- */
+.chip-row button, .chip-row button:nth-child(n) {
+  background: var(--pt-field) !important;
+  border: 1px solid var(--pt-line-2) !important;
+  border-radius: 12px !important;
+  color: #ccf6ea !important;
+  transform: none !important;
+  box-shadow: none !important;
+  font: 600 13px/1.6 var(--pt-font) !important;
+}
+.chip-row button:hover { background: #173a34 !important; border-color: var(--pt-teal) !important; transform: translateY(-1px) !important; }
+
+/* ---- settings and other side cards ---- */
+.side-col .paper-folder, .lecture-controls {
+  border: 1px solid var(--pt-line) !important;
+  border-radius: 16px !important;
+  background: var(--pt-card) !important;
+  box-shadow: 0 12px 30px #00000024 !important;
+}
+.side-col .paper-folder, .side-col .paper-folder *,
+.lecture-controls .prose, .lecture-controls .prose strong { color: var(--pt-ink) !important; }
+#mode-banner { background: #2c2918 !important; color: #f0d487 !important; border: 1px solid #e7b556 !important; border-radius: 12px !important; }
+
+/* platform theme — details */
+html { background: #061311 !important; }
+.gradio-container { background: transparent !important; }
+body { min-height: 100vh; }
+/* accordion titles (were dark ink + handwriting font from the paper look) */
+.side-col .paper-folder button.label-wrap span,
+.side-col button.label-wrap span {
+  color: var(--pt-ink) !important;
+  font: 700 15px/1.4 var(--pt-font) !important;
+}
+.side-col .paper-folder button.label-wrap .icon,
+.side-col .paper-folder button.label-wrap svg { color: var(--pt-muted) !important; fill: var(--pt-muted) !important; }
+/* pen swatches: a hairline ring so the black pen shows on the dark bar */
+.tb-swatch { box-shadow: 0 0 0 1px #3b5d55 !important; }
+.tb-swatch.active { box-shadow: 0 0 0 2px #0d2924, 0 0 0 4px var(--pt-teal) !important; }
+/* suggestions: two per row so each reads as a sentence, not a column */
+.chip-row {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 8px !important;
+}
+.chip-row > * { min-width: 0 !important; width: auto !important; }
+.chip-row button { width: 100% !important; min-height: 52px !important; padding: 8px 12px !important; text-align: right !important; }
+/* send: same weight as the other primary buttons */
+.question-panel #send-btn, .question-panel button#send-btn { font: 800 16px/1 var(--pt-font) !important; }
+
+/* =====================================================================
+   CLASSROOM THEME (from the approved mockup) — final layer.
+   Deep-green stage with soft curves, white rounded cards, orange "start"
+   call to action, blue send, light board toolbar with line icons and
+   pastel action tiles. Supersedes the layers above.
+   ===================================================================== */
+:root, .gradio-container, body.dark, body {
+  --cl-stage: #0e3326;
+  --cl-stage-2: #0a271d;
+  --cl-card: #ffffff;
+  --cl-soft: #f6f8f7;
+  --cl-line: #e3e8e6;
+  --cl-ink: #1c2b27;
+  --cl-muted: #6b7a76;
+  --cl-blue: #2563eb;
+  --cl-blue-2: #1d4ed8;
+  --cl-orange: #ec8a2f;
+  --cl-orange-2: #d9712a;
+  --cl-font: "Tajawal", "IBM Plex Sans Arabic", Tahoma, "Segoe UI", Arial, sans-serif;
+  --body-background-fill: var(--cl-stage) !important;
+  --color-accent: var(--cl-blue) !important;
+  --slider-color: var(--cl-blue) !important;
+  --checkbox-background-color-selected: var(--cl-blue) !important;
+  --checkbox-border-color-selected: var(--cl-blue) !important;
+}
+html { background: var(--cl-stage-2) !important; }
+body {
+  /* soft lighter sweeps like the mockup's background curves */
+  background:
+    radial-gradient(1200px 520px at 62% -12%, #1f5a40 0, transparent 60%),
+    radial-gradient(900px 420px at 8% 108%, #17483a 0, transparent 62%),
+    linear-gradient(180deg, var(--cl-stage) 0, var(--cl-stage-2) 100%) !important;
+  background-attachment: fixed !important;
+  color: var(--cl-ink) !important;
+}
+.gradio-container, .gradio-container button, .gradio-container input,
+.gradio-container textarea, .gradio-container .prose { font-family: var(--cl-font) !important; }
+
+/* ---- header ---- */
+.tutori-brand .brand-mark { background: transparent !important; color: #f4b63e !important; width: 44px; height: 44px; }
+.tutori-brand strong { color: #fff !important; font-size: 26px !important; }
+.tutori-brand small { color: #c9ddd5 !important; font-size: 13px !important; }
+#tutori-header .tag { color: #a9c7bc !important; }
+#tutori-header .live-student-tag, #tutori-live-status {
+  background: #1d4536 !important; border: 1px solid #2d5a49 !important;
+  color: #e7f3ee !important; padding: 10px 18px !important; font-weight: 700 !important;
+}
+#demo-start-lecture-btn, #demo-start-lecture-btn button {
+  background: linear-gradient(135deg, var(--cl-orange), var(--cl-orange-2)) !important;
+  border: 0 !important; border-radius: 14px !important;
+  color: #fff !important; font: 800 17px/1.2 var(--cl-font) !important;
+  box-shadow: 0 10px 24px #ec8a2f40 !important;
+}
+#demo-start-lecture-btn:hover, #demo-start-lecture-btn button:hover { background: #f29a45 !important; }
+#demo-start-lecture-btn.is-paused, #demo-start-lecture-btn button.is-paused {
+  background: #fff7e6 !important; color: #9a5a12 !important; box-shadow: none !important;
+}
+#replay-btn, #replay-btn button { background: #1d4536 !important; border: 1px solid #2d5a49 !important; color: #e7f3ee !important; }
+
+/* ---- board card ---- */
+.board-shell {
+  background: var(--cl-card) !important;
+  border: 0 !important; border-radius: 20px !important;
+  box-shadow: 0 18px 40px #00000033 !important;
+}
+.board-toolbar {
+  direction: rtl !important;
+  background: var(--cl-soft) !important;
+  border-bottom: 1px solid var(--cl-line) !important;
+  padding: 10px 14px !important; gap: 10px !important; align-items: center !important;
+}
+.tb-title { display: flex; align-items: center; gap: 8px; color: var(--cl-ink); font-weight: 800; font-size: 15px; }
+.tb-title .talk-label { color: var(--cl-ink) !important; }
+.tb-sep { width: 1px; align-self: stretch; margin: 4px 2px; background: var(--cl-line); }
+.board-toolbar .tb-btn {
+  background: #fff !important; border: 1px solid var(--cl-line) !important;
+  color: #3a4744 !important; border-radius: 10px !important; box-shadow: none !important;
+}
+.board-toolbar .tb-icon { width: 38px !important; height: 38px !important; padding: 0 !important; display: grid !important; place-items: center !important; }
+.board-toolbar .tb-text { height: 38px !important; padding: 0 12px !important; font: 700 13px/1 var(--cl-font) !important; }
+.board-toolbar .tb-btn:hover { background: #eef4ff !important; border-color: #bfd3fb !important; color: var(--cl-blue) !important; }
+.board-toolbar .tb-btn.active { background: #e8f0ff !important; border-color: var(--cl-blue) !important; color: var(--cl-blue) !important; }
+.board-toolbar .tb-swatch { width: 28px !important; height: 28px !important; border-radius: 8px !important; box-shadow: none !important; }
+.board-toolbar .tb-swatch.active { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--cl-blue) !important; }
+.board-status { background: #ffffffee !important; color: var(--cl-ink) !important; border: 1px solid var(--cl-line) !important; }
+.board-caption { background: var(--cl-soft) !important; color: var(--cl-ink) !important; border-top: 1px solid var(--cl-line) !important; }
+
+/* ---- white side cards ---- */
+.question-panel, .log-card {
+  background: var(--cl-card) !important;
+  border: 0 !important; border-radius: 20px !important;
+  box-shadow: 0 14px 34px #0000002e !important;
+}
+.question-panel { padding: 18px 18px 14px !important; }
+.ask-head-row { display: flex; align-items: center; gap: 8px; color: var(--cl-ink); }
+.ask-title { color: var(--cl-ink) !important; font-size: 19px !important; font-weight: 800 !important; }
+.ask-sub { color: var(--cl-muted) !important; font-size: 13px !important; }
+.ask-head { flex-direction: column; align-items: flex-start !important; gap: 4px !important; }
+.ask-input { position: relative !important; background: transparent !important; border: 0 !important; box-shadow: none !important; }
+.question-panel #lesson-question textarea {
+  background: #fff !important; color: var(--cl-ink) !important;
+  border: 1px solid #d5dcd9 !important; border-radius: 14px !important;
+  padding-left: 52px !important;          /* room for the inline mic */
+}
+#lesson-question textarea::placeholder { color: #8a9692 !important; }
+.question-panel #lesson-question textarea:focus { border-color: var(--cl-blue) !important; box-shadow: 0 0 0 3px #2563eb22 !important; }
+.ask-inline-mic-wrap { position: absolute !important; left: 10px; top: 12px; width: auto !important; padding: 0 !important; background: transparent !important; z-index: 2; }
+.ask-inline-mic {
+  width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
+  border: 0; background: #eef2f1; color: #46524f; cursor: pointer;
+}
+.ask-inline-mic:hover { background: #e3ebff; color: var(--cl-blue); }
+.ask-inline-mic.is-recording { background: #fee2e2; color: #dc2626; }
+.ask-mic { background: #fff !important; border: 1px solid #d5dcd9 !important; color: var(--cl-ink) !important; font-weight: 800 !important; }
+.ask-mic:hover { background: #f7f9f8 !important; border-color: #b9c4c0 !important; }
+.ask-mic-dot { background: #dc2626 !important; }
+.ask-mic.is-recording { background: #fef2f2 !important; border-color: #fca5a5 !important; color: #b91c1c !important; }
+.ask-mic.is-recording .ask-mic-dot { background: #dc2626 !important; }
+.question-panel #send-btn, .question-panel button#send-btn {
+  background: var(--cl-blue) !important; border: 0 !important; color: #fff !important;
+  display: inline-flex !important; align-items: center !important; justify-content: center !important; gap: 8px !important;
+}
+.question-panel #send-btn::before {
+  content: ""; width: 18px; height: 18px; background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 3L10 14'/%3E%3Cpath d='M21 3l-7 18-4-7-7-4z'/%3E%3C/svg%3E") center / contain no-repeat;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 3L10 14'/%3E%3Cpath d='M21 3l-7 18-4-7-7-4z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+.question-panel #send-btn:hover { background: var(--cl-blue-2) !important; }
+.ask-hint { display: flex; align-items: flex-start; gap: 6px; color: var(--cl-muted); direction: rtl; }
+.ask-hint svg { flex: none; margin-top: 2px; }
+.ask-status { color: var(--cl-muted) !important; font-size: 12.5px !important; }
+.ask-status[data-kind="recording"] { color: #b91c1c !important; }
+.ask-status[data-kind="error"] { color: #b45309 !important; }
+.ask-status[data-kind="sent"] { color: #15803d !important; }
+
+/* ---- lecture log ---- */
+.log-card { padding: 0 !important; overflow: hidden; gap: 0 !important; }
+.log-head {
+  display: flex; align-items: center; gap: 8px; direction: rtl;
+  padding: 16px 18px; border-bottom: 1px solid var(--cl-line);
+  color: var(--cl-ink); font-weight: 800; font-size: 17px;
+}
+#tutori-chat { background: #fff !important; border: 0 !important; border-radius: 0 !important; box-shadow: none !important; }
+#tutori-chat .message, #tutori-chat .message * { color: var(--cl-ink) !important; }
+#tutori-chat .message { background: var(--cl-soft) !important; border: 1px solid var(--cl-line) !important; }
+#tutori-chat .user .message, #tutori-chat [data-testid="user"] { background: #e8f0ff !important; border-color: #c9d9fb !important; }
+.log-empty { display: grid; justify-items: center; gap: 6px; padding: 18px 10px; color: #a3aeab; text-align: center; direction: rtl; }
+.log-empty strong { color: var(--cl-ink); font-size: 15px; }
+.log-empty span { color: var(--cl-muted); font-size: 12.5px; }
+
+/* ---- action tiles ---- */
+.action-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; direction: rtl; }
+.action-tile {
+  display: grid; justify-items: center; align-content: center; gap: 6px;
+  min-height: 92px; padding: 10px 6px; border: 0; border-radius: 16px; cursor: pointer;
+  font: 800 12.5px/1.45 var(--cl-font); color: #2a3532; text-align: center;
+  box-shadow: 0 8px 20px #00000026; transition: transform .12s ease, box-shadow .12s ease;
+}
+.action-tile:hover { transform: translateY(-2px); box-shadow: 0 12px 26px #00000033; }
+.action-tile:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+.tile-amber { background: #fdf1c2; } .tile-amber svg { color: #b7791f; }
+.tile-rose { background: #fbd6df; } .tile-rose svg { color: #be123c; }
+.tile-sky { background: #d9e8fd; } .tile-sky svg { color: #1d4ed8; }
+.tile-mint { background: #d3f4d9; } .tile-mint svg { color: #15803d; }
+
+/* ---- coach suggestions: quiet pills under the tiles ---- */
+.chip-head { color: #c9ddd5; font-size: 12.5px; font-weight: 700; direction: rtl; margin: 4px 2px -2px; }
+.chip-row button, .chip-row button:nth-child(n) {
+  background: #ffffff14 !important; border: 1px solid #ffffff2e !important;
+  color: #eaf4f0 !important; border-radius: 12px !important;
+  font: 600 12.5px/1.6 var(--cl-font) !important; min-height: 44px !important;
+}
+.chip-row button:hover { background: #ffffff24 !important; border-color: #ffffff55 !important; }
+
+/* ---- settings / profile folders ---- */
+.side-col .paper-folder {
+  background: #ffffff14 !important; border: 1px solid #ffffff26 !important;
+  border-radius: 16px !important; box-shadow: none !important;
+}
+.side-col .paper-folder button.label-wrap span, .side-col button.label-wrap span { color: #eaf4f0 !important; }
+.side-col .paper-folder, .side-col .paper-folder * { color: #eaf4f0 !important; }
+.side-col .paper-folder input, .side-col .paper-folder textarea { color: var(--cl-ink) !important; }
+
+@media (max-width: 680px) {
+  .action-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .board-toolbar { flex-wrap: wrap !important; }
+}
+
+/* classroom theme — dark text inside white cards. The platform layer set
+   Gradio's --body-text-color (used on every HTML block's contents) to a
+   light ink; inside the white cards it must be the dark ink again. */
+.board-shell, .question-panel, .log-card, .action-tiles {
+  --body-text-color: var(--cl-ink) !important;
+  --block-label-text-color: var(--cl-ink) !important;
+}
+.board-toolbar .tb-btn svg, .board-toolbar .tb-btn span,
+.ask-mic span, .ask-inline-mic svg, .action-tile span,
+.log-head span, .log-head svg, .ask-head-row svg, .ask-hint svg,
+.tb-title svg { color: inherit !important; }
+.log-head, .ask-head-row, .tb-title { color: var(--cl-ink) !important; }
+.ask-hint { color: var(--cl-muted) !important; }
+.ask-mic .ask-mic-label { color: var(--cl-ink) !important; }
+.ask-mic.is-recording .ask-mic-label { color: #b91c1c !important; }
+.action-tile span { color: #2a3532 !important; }
+/* textarea sits on white: no dark corners from Gradio's block behind it */
+.ask-input, .ask-input > *, .question-panel .block, .question-panel .form {
+  background: transparent !important; border: 0 !important; box-shadow: none !important;
+}
+
+/* inline mic: Gradio wraps gr.HTML in a padded, scrollable box — the
+   icon was pushed down and clipped, leaving only scrollbar arrows */
+.ask-inline-mic-wrap, .ask-inline-mic-wrap > *, .ask-inline-mic-wrap .prose,
+.ask-inline-mic-wrap .html-container { overflow: visible !important; padding: 0 !important; margin: 0 !important; height: auto !important; min-height: 0 !important; }
+.ask-inline-mic-wrap { z-index: 5 !important; width: 34px !important; }
+.ask-inline-mic { color: #46524f !important; background: #eef2f1 !important; }
