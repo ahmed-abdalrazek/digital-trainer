@@ -86,11 +86,12 @@ HEADER_HTML = """
     <!-- same brand block as the platform sidebar (index.html) -->
     <div class="tutori-brand">
       <div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" width="30" height="30" fill="currentColor"><path d="M12 4L1.5 9 12 14l8.5-4v5.5h1.5V9z"/><path d="M5.5 12.6V16c0 1.9 2.9 3.5 6.5 3.5s6.5-1.6 6.5-3.5v-3.4L12 15.7z"/></svg></div>
-      <div><strong>المدرب الرقمي</strong><small>منصة تعليمية تفاعلية مع مدرب ذكي بالذكاء الاصطناعي</small></div>
+      <div><strong>المدرب الرقمي</strong><small class="tag">أساسيات البرمجة · من فهم المشكلة إلى بناء الخوارزمية · ٥ دقائق</small></div>
     </div>
-    <div class="tag">أساسيات البرمجة · من فهم المشكلة إلى بناء الخوارزمية · ٥ دقائق</div>
   </div>
-  <span class="live-student-tag" id="tutori-live-status">● المحاضر جاهز</span>
+  <div class="head-right">
+    <span class="live-student-tag" id="tutori-live-status">● المحاضر جاهز</span>
+  </div>
 </div>
 """
 
@@ -112,7 +113,6 @@ def _icon(path, size=20):
 
 ICON_CHAT = _icon('<path d="M5 18l-1.5 3 4-1.5A8.5 8.5 0 1 0 5 18z"/><path d="M8.5 11h.01M12 11h.01M15.5 11h.01"/>')
 ICON_DOC = _icon('<path d="M7 3.5h7l4 4V20a.5.5 0 0 1-.5.5h-10A.5.5 0 0 1 7 20z"/><path d="M14 3.5V8h4"/><path d="M9.5 12h5M9.5 15.5h5"/>')
-ICON_MIC = _icon('<rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v3.5"/>')
 ICON_INFO = _icon('<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 8h.01"/>', 16)
 ICON_SPARK = _icon('<path d="M12 4l1.6 4.4L18 10l-4.4 1.6L12 16l-1.6-4.4L6 10l4.4-1.6z"/><path d="M18.5 15.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z"/>', 24)
 ICON_STAR = _icon('<path d="M12 4l2.4 5 5.4.7-4 3.7 1 5.4L12 16.3 7.2 18.8l1-5.4-4-3.7 5.4-.7z"/>', 24)
@@ -175,6 +175,26 @@ N_CHIPS = len(CHIPS)
 PENDING_REPLY = "✏️ *يجهّز المدرب الإجابة…*"
 
 
+LECTURE_NOT_STARTED = "ابدأ المحاضرة أولًا، ثم اطرح سؤالك عن الدرس."
+
+
+def _lesson_scope():
+    """(topic, scope text) of the published lecture: questions are limited
+    to it. Built from its title and each section's title and objective."""
+    try:
+        version, sections = lesson_store.get_published_sections()
+    except Exception:
+        return None, None
+    if not version or not sections:
+        return None, None
+    title = lesson_store.LESSON_TITLE
+    lines = [f"عنوان المحاضرة: {title}", "أجزاء المحاضرة:"]
+    for section in sections:
+        objective = str(section.get("objective") or "").split("·")[0].strip()
+        lines.append(f"- {section.get('title', '')}: {objective}")
+    return title, "\n".join(lines)
+
+
 def run_turn(audio_path, typed_text, snapshot, chat, convo, profile,
              notes, board_ops, pace, lesson_minutes, web_on, voice_on,
              prepared=False, saved_lesson=None, workflow_error=None):
@@ -223,10 +243,15 @@ def run_turn(audio_path, typed_text, snapshot, chat, convo, profile,
 
     seq = 0
     error = None
+    clean_board = False
     print(f"[tutori] turn {turn_id}: starting engine", flush=True)
     try:
         if workflow_error:
             events = [{"type": "final", "error": workflow_error}]
+        elif not saved_lesson and not convo:
+            # questions belong to a running lecture: nothing has been taught
+            # in this session yet, so there is nothing to ask about
+            events = [{"type": "final", "error": LECTURE_NOT_STARTED}]
         elif saved_lesson:
             events = [{"type": "status", "status": "teaching",
                        "detail": f"تشغيل النسخة المعتمدة {saved_lesson['version']}…"}]
@@ -234,8 +259,15 @@ def run_turn(audio_path, typed_text, snapshot, chat, convo, profile,
             events.append({"type": "final", "text": " ".join(s["say"] for s in saved_lesson["steps"]),
                            "error": None, "question": saved_lesson["title"]})
         else:
+            topic, scope = _lesson_scope()
+            # An answer starts on a clean board (the lecture's drawing comes
+            # back when the lecture resumes, each section brings its own), so
+            # the engine plans it on an empty board instead of around — and
+            # sometimes over — the lecture's drawing.
+            clean_board = True
             events = ENGINE.run_turn(audio_path, typed_text, snapshot, convo, profile,
-                                     notes, board_ops, pace, lesson_minutes, web_on, voice_on)
+                                     notes, [], pace, lesson_minutes, web_on, voice_on,
+                                     lesson_scope=scope, lesson_topic=topic)
         for ev in events:
             kind = ev.get("type")
             if seq == 0 and kind != "step":
@@ -252,6 +284,13 @@ def run_turn(audio_path, typed_text, snapshot, chat, convo, profile,
                     notes = (notes + "\n" + fresh)[-4000:]
             elif kind == "step":
                 step = dict(ev["step"], i=seq)
+                board = list(step.get("board") or [])
+                if clean_board and board:
+                    # clear before the answer's first drawing; a step with no
+                    # drawing (e.g. the off-topic reply) leaves the board alone
+                    if board[0].get("op") != "clear":
+                        step["board"] = [{"op": "clear"}] + board
+                    clean_board = False
                 says.append(step.get("say", ""))
                 board_ops = _track_board(board_ops, step.get("board"))
                 chat[-1]["content"] = "✏️ " + " ".join(s for s in says if s)
@@ -680,58 +719,60 @@ with gr.Blocks(
 
         # ---------------- conversation ----------------
         with gr.Column(scale=8, elem_classes="side-col"):
-            with gr.Column(elem_classes="question-panel"):
-                gr.HTML(f'<div class="ask-head"><div class="ask-head-row">{ICON_CHAT}'
-                        '<span class="ask-title">اسأل المدرب</span></div>'
-                        '<span class="ask-sub">اكتب سؤالك وسيجيبك المدرب الرقمي فورًا</span></div>')
-                with gr.Group(elem_classes="ask-input"):
-                    text_in = gr.Textbox(
-                        value="",
-                        placeholder="اكتب سؤالك هنا…",
-                        show_label=False, lines=2, max_lines=6, container=False,
-                        elem_id="lesson-question",
-                    )
-                    # the same recorder as «سجّل سؤالك», inside the box
-                    gr.HTML(f'<button type="button" class="ask-inline-mic" data-mic="1" '
-                            f'title="تسجيل سؤال صوتي" aria-label="تسجيل سؤال صوتي">{ICON_MIC}</button>',
-                            elem_classes="ask-inline-mic-wrap")
-                with gr.Row(elem_classes="ask-actions"):
-                    # A plain browser recorder (board.js) instead of gr.Audio:
-                    # it pauses the lecture the moment recording starts and
-                    # has an Arabic, one-button UI.
-                    gr.HTML(
-                        '<button type="button" id="tutori-mic" class="ask-mic" '
-                        'aria-label="تسجيل سؤال صوتي">'
-                        '<span class="ask-mic-dot" aria-hidden="true"></span>'
-                        '<span class="ask-mic-label">سجّل سؤالك</span></button>',
-                        elem_classes="ask-mic-wrap",
-                    )
-                    send_btn = gr.Button("إرسال", variant="primary", elem_id="send-btn",
-                                         icon=None)
-                gr.HTML(f'<div class="ask-hint">{ICON_INFO}<div id="tutori-ask-status" class="ask-status" '
-                        'aria-live="polite">يمكنك طرح الأسئلة صوتيًا أو كتابيًا، وسيقدّم المدرب شرحًا '
-                        'مبسطًا وموجزًا.</div></div>')
-                # hidden carriers for the recorded question (see board.js)
-                voice_in = gr.Textbox(visible=True, elem_id="tutori-voice-sink",
-                                      elem_classes="payload-sink", show_label=False,
-                                      container=False)
-                voice_btn = gr.Button("voice", elem_id="tutori-voice-send",
-                                      elem_classes="payload-sink")
-            with gr.Column(elem_classes="log-card"):
-                gr.HTML(f'<div class="log-head">{ICON_DOC}<span>سجل المحاضرة</span></div>')
-                chatbot = gr.Chatbot(
-                    type="messages", height=240, elem_id="tutori-chat",
-                    show_label=False, placeholder=LOG_EMPTY_HTML,
-                    avatar_images=(None, None),
-                    show_copy_button=False,
-                )
-            gr.HTML(ACTION_TILES_HTML)
-            gr.HTML('<div class="chip-head">أسئلة مقترحة من المدرب</div>')
-            with gr.Row(elem_classes="chip-row"):
-                chip_btns = [gr.Button(c, size="sm") for c in CHIPS]
-            chip_states = [gr.State(c) for c in CHIPS]
+            # two tabs: asking (with the coach's suggested questions) and the
+            # lecture log — the side column fits the screen either way
+            with gr.Tabs(elem_classes="side-tabs", selected="ask"):
+                with gr.Tab("اسأل المدرب", id="ask", elem_classes="side-tab"):
+                    with gr.Column(elem_classes="question-panel"):
+                        gr.HTML(f'<div class="ask-head"><div class="ask-head-row">{ICON_CHAT}'
+                                '<span class="ask-title">اسأل المدرب</span></div>'
+                                '<span class="ask-sub">اكتب سؤالك وسيجيبك المدرب الرقمي فورًا</span></div>')
+                        text_in = gr.Textbox(
+                            value="",
+                            placeholder="اكتب سؤالك هنا…",
+                            show_label=False, lines=2, max_lines=6, container=False,
+                            elem_id="lesson-question",
+                        )
+                        with gr.Row(elem_classes="ask-actions"):
+                            # A plain browser recorder (board.js) instead of gr.Audio:
+                            # it pauses the lecture the moment recording starts and
+                            # has an Arabic, one-button UI.
+                            gr.HTML(
+                                '<button type="button" id="tutori-mic" class="ask-mic" '
+                                'aria-label="تسجيل سؤال صوتي">'
+                                '<span class="ask-mic-dot" aria-hidden="true"></span>'
+                                '<span class="ask-mic-label">سجّل سؤالك</span></button>',
+                                elem_classes="ask-mic-wrap",
+                            )
+                            send_btn = gr.Button("إرسال", variant="primary", elem_id="send-btn",
+                                                 icon=None)
+                        gr.HTML(f'<div class="ask-hint">{ICON_INFO}<div id="tutori-ask-status" class="ask-status" '
+                                'aria-live="polite">اسأل بالكتابة أو بالصوت.</div></div>')
+                        # hidden carriers for the recorded question (see board.js)
+                        voice_in = gr.Textbox(visible=True, elem_id="tutori-voice-sink",
+                                              elem_classes="payload-sink", show_label=False,
+                                              container=False)
+                        voice_btn = gr.Button("voice", elem_id="tutori-voice-send",
+                                              elem_classes="payload-sink")
+                    # action tiles hidden at the user's request (kept for later)
+                    gr.HTML(ACTION_TILES_HTML, visible=False)
+                    gr.HTML('<div class="chip-head">أسئلة مقترحة من المدرب</div>')
+                    with gr.Row(elem_classes="chip-row"):
+                        chip_btns = [gr.Button(c, size="sm") for c in CHIPS]
+                    chip_states = [gr.State(c) for c in CHIPS]
+                with gr.Tab("سجل المحاضرة", id="log", elem_classes="side-tab"):
+                    with gr.Column(elem_classes="log-card"):
+                        gr.HTML(f'<div class="log-head">{ICON_DOC}<span>سجل المحاضرة</span></div>')
+                        chatbot = gr.Chatbot(
+                            type="messages", height=200, elem_id="tutori-chat",
+                            show_label=False, placeholder=LOG_EMPTY_HTML,
+                            avatar_images=(None, None),
+                            show_copy_button=False,
+                        )
 
-            with gr.Accordion("⚙️ إعدادات الشرح", open=False):
+            # hidden at the user's request; the controls keep their default
+            # values and still feed every lesson
+            with gr.Accordion("⚙️ إعدادات الشرح", open=False, visible=False):
                 pace = gr.Slider(
                     1, 5, value=3, step=1, label="سرعة الشرح وعمقه",
                     info="١ = مبتدئ وخطوات مبسطة · ٥ = شرح سريع ومتقدم",
@@ -750,7 +791,7 @@ with gr.Blocks(
                         "🔊 صوت المحاضرة من ElevenLabs. أضف `ELEVENLABS_API_KEY` إلى بيئة التشغيل. "
                         f"معرّف الصوت: `{getattr(ENGINE, 'TTS_VOICE_ID', '')}`."
                     )
-            with gr.Accordion("🧠 ملف المتعلم", open=False):
+            with gr.Accordion("🧠 ملف المتعلم", open=False, visible=False):
                 gr.Markdown(
                     "يمكن للمدرب تذكّر مستواك وأهدافك وما أتقنته. تُحفظ هذه الملاحظات "
                     "في هذا المتصفح فقط لمساعدته على ضبط الشرح لاحقًا."

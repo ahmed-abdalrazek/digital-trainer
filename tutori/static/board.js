@@ -677,6 +677,104 @@
     } catch (e) { /* never let one bad op kill the lesson */ }
   }
 
+  // ---------- pacing: draw each mark when the narration reaches it ----------
+  // Arabic-aware matching: no diacritics/tatweel, unified alef/yaa/taa
+  // marbuta, and a leading «ال» / one-letter conjunction ignored.
+  function normAr(s) {
+    return String(s || "")
+      .replace(/[ً-ٰٟـ]/g, "")
+      .replace(/[أإآ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه")
+      .toLowerCase();
+  }
+  function stemAr(w) {
+    return w.replace(/^(و|ف|ب|ل|ك)?(ال)?(?=.{3,})/, "");
+  }
+  function opWords(op) {
+    const txt = [op.text, op.label, op.title, ...(op.lines || []), ...(op.side_labels || [])]
+      .filter(Boolean).join(" ");
+    return normAr(txt).split(/[^\p{L}\p{N}]+/u).map(stemAr).filter(w => w.length >= 3);
+  }
+  // Sentences of the narration with the fraction of the text where each
+  // starts — the caption shows the one being spoken.
+  function sentencesOf(say) {
+    const text = String(say || "");
+    const parts = text.match(/[^.!؟?؛\n]+[.!؟?؛]*\s*/g) || (text ? [text] : []);
+    const total = Math.max(1, text.length);
+    let pos = 0;
+    const out = [];
+    for (const p of parts) {
+      if (p.trim()) out.push({ text: p.trim(), at: pos / total });
+      pos += p.length;
+    }
+    return out;
+  }
+  // Timeline: each mark starts when its words are spoken (fraction of the
+  // narration × spoken length); marks with no words of their own (arrows,
+  // unlabeled shapes) go between their neighbours. Marks never overlap in
+  // time, so they are drawn and baked strictly one after another.
+  function buildSchedule(drawable, say, speak) {
+    const n = drawable.length;
+    if (!n) return [];
+    const text = normAr(say);
+    const total = Math.max(1, text.length);
+    const anchors = new Array(n).fill(null);
+    let cursor = 0;
+    drawable.forEach((x, i) => {
+      if (x.op.op === "title") { anchors[i] = 0; return; }
+      for (const w of opWords(x.op)) {
+        let at = text.indexOf(w, cursor);
+        if (at < 0) at = text.indexOf(w);
+        if (at >= 0) { anchors[i] = at / total; cursor = at; break; }
+      }
+    });
+    // an arrow appears once BOTH shapes it connects are on the board
+    const shapeBox = o => {
+      if (["box", "ellipse"].includes(o.op) && o.at) return [o.at[0], o.at[1], o.at[0] + (o.w || 22), o.at[1] + (o.h || 10)];
+      if (o.op === "polygon" && o.points?.length) {
+        const xs = o.points.map(p => p[0]), ys = o.points.map(p => p[1]);
+        return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+      }
+      return null;
+    };
+    const nearestShape = pt => {
+      let best = -1, bestD = 6;                     // within 6 board units
+      drawable.forEach((x, j) => {
+        const bb = shapeBox(x.op);
+        if (!bb || !pt) return;
+        const dx = Math.max(bb[0] - pt[0], 0, pt[0] - bb[2]);
+        const dy = Math.max(bb[1] - pt[1], 0, pt[1] - bb[3]);
+        const d = Math.hypot(dx, dy);
+        if (d < bestD) { bestD = d; best = j; }
+      });
+      return best;
+    };
+    drawable.forEach((x, i) => {
+      if (anchors[i] !== null || x.op.op !== "arrow") return;
+      const ends = [nearestShape(x.op.from), nearestShape(x.op.to)]
+        .filter(j => j >= 0 && anchors[j] !== null).map(j => anchors[j]);
+      if (ends.length) anchors[i] = Math.max(...ends) + 0.01;
+    });
+    for (let i = 0; i < n; i++) {
+      if (anchors[i] !== null) continue;
+      let p = i - 1; while (p >= 0 && anchors[p] === null) p--;
+      let q = i + 1; while (q < n && anchors[q] === null) q++;
+      const a = p >= 0 ? anchors[p] : 0;
+      const b = q < n ? Math.max(anchors[q], a) : Math.min(0.92, a + 0.15);
+      anchors[i] = a + (b - a) * (i - p) / (q - p);
+    }
+    const items = drawable.map((x, i) => {
+      const span = Math.min(2.4, Math.max(0.5, opCost(x.op) * 0.03));
+      const start = Math.max(0, anchors[i] * speak - 0.3);   // a beat early
+      return { ...x, start, end: start + span, order: i };
+    });
+    items.sort((u, v) => (u.start - v.start) || (u.order - v.order));
+    for (let i = 1; i < items.length; i++) {
+      const gap = items[i - 1].end + 0.08 - items[i].start;
+      if (gap > 0) { items[i].start += gap; items[i].end += gap; }
+    }
+    return items;
+  }
+
   // rough time-cost of an op, for scheduling within a step
   function opCost(o) {
     const d = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
@@ -799,39 +897,81 @@
     return arr.buffer;
   }
 
+  // Narration plays through an <audio> element (not a Web Audio buffer) so
+  // the learner can change its speed without the voice changing pitch.
   function loadStepAudio(step) {
-    if (step._bufP) return step._bufP;
-    if (step.audio_url) {
-      step._bufP = fetch(step.audio_url, { cache: "force-cache" })
-        .then(response => {
-          if (!response.ok) throw new Error(`audio request failed (${response.status})`);
-          return response.arrayBuffer();
-        })
-        .then(buffer => actx().decodeAudioData(buffer))
-        .catch(error => { console.warn("[tutori] saved lesson audio failed", error); return null; });
-    } else if (step.audio) {
-      try { step._bufP = actx().decodeAudioData(b64ToBuf(step.audio)).catch(() => null); }
-      catch (error) { step._bufP = Promise.resolve(null); }
-    }
-    return step._bufP || Promise.resolve(null);
+    if (step._audioP) return step._audioP;
+    const url = step.audio_url ? step.audio_url
+      : step.audio ? `data:${String(step.audio).startsWith("UklGR") ? "audio/wav" : "audio/mpeg"};base64,${step.audio}`
+      : null;
+    if (!url) return Promise.resolve(null);
+    step._audioP = new Promise(resolve => {
+      const el = new Audio();
+      el.preload = "auto";
+      el.preservesPitch = el.mozPreservesPitch = el.webkitPreservesPitch = true;
+      let settled = false;
+      const done = ok => { if (!settled) { settled = true; resolve(ok ? el : null); } };
+      el.addEventListener("loadedmetadata", () => done(true), { once: true });
+      el.addEventListener("error", () => {
+        console.warn("[tutori] lesson audio failed", el.error); done(false);
+      }, { once: true });
+      setTimeout(() => done(el.readyState >= 1), 15000);
+      el.src = url;
+      el.load();
+    });
+    return step._audioP;
   }
+
+  // ---------- narration speed (chosen by the learner) ----------
+  const RATES = [0.75, 1, 1.25, 1.5];
+  S.rate = 1;
+  try { const r = parseFloat(localStorage.getItem("tutori_rate")); if (RATES.includes(r)) S.rate = r; } catch (e) {}
+  function setRate(rate) {
+    if (!RATES.includes(rate)) return;
+    S.rate = rate;
+    if (S.curAudioEl) S.curAudioEl.playbackRate = rate;      // applies mid-sentence
+    try { localStorage.setItem("tutori_rate", String(rate)); } catch (e) {}
+    syncSpeedUi();
+  }
+  function syncSpeedUi() {
+    document.querySelectorAll(".speed-ctl [data-rate]").forEach(b => {
+      const on = parseFloat(b.dataset.rate) === S.rate;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", String(on));
+    });
+    document.querySelectorAll(".speed-ctl .speed-val").forEach(v => { v.textContent = `${S.rate}×`; });
+  }
+  function openSpeedMenu(open) {
+    document.querySelectorAll(".speed-ctl").forEach(c => {
+      const m = c.querySelector(".speed-menu"), t = c.querySelector(".speed-toggle");
+      if (m) m.hidden = !open;
+      if (t) t.setAttribute("aria-expanded", String(open));
+    });
+  }
+  document.addEventListener("click", e => {
+    const b = e.target.closest?.(".speed-ctl [data-rate]");
+    if (b) { e.preventDefault(); setRate(parseFloat(b.dataset.rate)); openSpeedMenu(false); return; }
+    const t = e.target.closest?.(".speed-toggle");
+    if (t) { e.preventDefault(); openSpeedMenu(t.getAttribute("aria-expanded") !== "true"); return; }
+    if (!e.target.closest?.(".speed-menu")) openSpeedMenu(false);
+  });
+  document.addEventListener("keydown", e => { if (e.key === "Escape") openSpeedMenu(false); });
+  setInterval(syncSpeedUi, 1000);   // the header is mounted by Gradio after this script
 
   // ---------- lesson playback ----------
   async function playStep(step) {
     const ops = (step.board || []).map(o => ({ op: o, seed: (S.opSeedCounter++ * 2654435761) >>> 0 }));
     let dur = step.dur || Math.max(2.2, String(step.say || "").split(/\s+/).length * 0.36);
-    let src = null;
+    let src = null;          // the step's <audio> element
     let audioEnded = true;   // true while there is no source; set false when one starts
 
     if ((step.audio || step.audio_url) && S.voiceOn) {
       try {
-        // audio was pre-decoded the moment the step arrived (see enqueue)
-        const buf = await loadStepAudio(step);
-        if (buf) {
-          dur = buf.duration;
-          src = actx().createBufferSource();
-          src.buffer = buf;
-          src.connect(actx().destination);
+        // audio started loading the moment the step arrived (see enqueue)
+        const el = await loadStepAudio(step);
+        if (el) {
+          if (isFinite(el.duration) && el.duration > 0) dur = el.duration;
+          src = el;
           audioEnded = false;
           src.onended = () => { audioEnded = true; };  // the ONLY reliable end signal
         }
@@ -843,7 +983,10 @@
     }
 
     await waitWhilePaused();
-    setCaption(step.say || "");
+    // the caption follows the voice: one sentence at a time
+    const sentences = sentencesOf(step.say);
+    let sentenceIdx = 0;
+    setCaption(sentences.length ? sentences[0].text : "");
 
     // Clear and targeted erase are agent actions, not drawable marks.
     for (const item of ops) {
@@ -853,28 +996,36 @@
     const drawable = ops.filter(x => !["clear", "erase"].includes(x.op.op));
 
     const total = drawable.reduce((s, x) => s + opCost(x.op), 0) || 1;
-    let t0 = 0;
-    // Keep canvas drawing brisk and independent of long narration clips.
-    // Speech continues while the complete visual is drawn in a few seconds.
-    const budget = Math.min(8, Math.max(2.5, drawable.length * 0.65));
-    const sched = drawable.map(x => {
-      const span = Math.max(0.22, (opCost(x.op) / total) * budget);
-      const item = { ...x, start: t0, end: t0 + span };
-      t0 += span;
-      return item;
-    });
+    // Draw each mark when the narration reaches it (it used to be squeezed
+    // into the first 2.5–8 s, then the board sat still for the rest of a
+    // ~30 s clip).
+    const speak = Math.max(2.5, dur * 0.92);
+    const sched = buildSchedule(drawable, step.say, speak);
 
     let elapsed = 0;
     let lastTick = performance.now();
-    if (src) src.start();
+    if (src) {
+      src.currentTime = 0;                 // a resumed lecture step replays from its start
+      src.playbackRate = S.rate;
+      S.curAudioEl = src;
+      const playing = src.play();
+      if (playing) playing.catch(() => { audioEnded = true; });
+    }
 
     await new Promise(resolve => {
       let bakedIdx = 0;
       const tick = () => {
         const now = performance.now();
-        if (!S.paused) elapsed += (now - lastTick) / 1000;
+        if (!S.paused) elapsed += (now - lastTick) / 1000 * S.rate;   // clock runs in audio time
         lastTick = now;
         const el = elapsed;
+        // advance the caption to the sentence being spoken now
+        if (sentences.length > 1) {
+          const reached = Math.min(1, el / speak);
+          let k = sentenceIdx;
+          while (k + 1 < sentences.length && sentences[k + 1].at <= reached) k++;
+          if (k !== sentenceIdx) { sentenceIdx = k; setCaption(sentences[k].text); }
+        }
         const live = S.liveCv.getContext("2d");
         if (!S.paused) live.clearRect(0, 0, S.liveCv.width, S.liveCv.height);
         if (S.paused) {
@@ -894,9 +1045,13 @@
         const audioDone = src ? (audioEnded || el > dur + 2.0) : el > dur;
         if (bakedIdx >= sched.length && audioDone) {
           live.clearRect(0, 0, S.liveCv.width, S.liveCv.height);
+          if (S.curAudioEl === src) S.curAudioEl = null;
           setTimeout(resolve, 140);   // natural breath between steps
-        } else if (S.stopFlag) {
-          try { src && src.stop(); } catch (e) {}
+        } else if (S.stopFlag || (step._turn && step._turn !== S.curTurn)) {
+          // stop: either the 50ms stop window, or (robust, can't be missed
+          // by a throttled frame) a newer turn — e.g. a question — has begun
+          try { src && src.pause(); } catch (e) {}
+          if (S.curAudioEl === src) S.curAudioEl = null;
           if (S.curTurn !== S.killTurn) {
             // bake the remainder instantly so the board ends complete —
             // but NOT when the turn was abandoned via "New lesson"
@@ -917,7 +1072,37 @@
     if (el) el.textContent = text;
   }
 
+  // ---- a question interrupts the lecture; afterwards the lecture resumes ----
+  // When a new (question) turn arrives while the published lecture is still
+  // playing, keep the rest of the lecture — starting with the step that was
+  // cut off — and play it again once the answer has finished. Every lecture
+  // step begins with its own `clear`, so restarting that step also restores
+  // its drawing.
+  function saveLectureForLater() {
+    if (S.curTurn !== S.lectureTurn || S.lectureCompleted) return;
+    const left = [];
+    if (S.curPlaying && S.curPlaying._turn === S.lectureTurn) left.push(S.curPlaying);
+    for (const st of S.queue) if (st._turn === S.lectureTurn) left.push(st);
+    if (!left.length) return;
+    S.resume = { turn: S.lectureTurn, steps: left, serverDone: true,
+                 completionText: S.lectureCompletionText || "اكتملت المحاضرة ✓" };
+  }
+  function resumeLecture() {
+    const r = S.resume;
+    S.resume = null;
+    S.curTurn = r.turn;
+    S.queue = r.steps;
+    S.enqueued = Number.MAX_SAFE_INTEGER;     // nothing new will arrive for it
+    S.serverDone = r.serverDone;
+    S.completionText = r.completionText;
+    setCaption("");
+    setStatus("نكمل المحاضرة…", "teaching");
+    setHeaderStatus("🔊 المحاضرة تعمل");
+    setTimeout(() => { setStatus("", "idle"); pump(); }, 1400);
+  }
+
   function finishPlayback() {
+    if (S.resume && S.curTurn !== S.resume.turn) { resumeLecture(); return; }
     setCaption("");
     if (S.completionText.includes("المحاضرة")) {
       S.lectureCompleted = true;
@@ -938,7 +1123,11 @@
     while (S.queue.length) {
       if (S.stopFlag) break;
       const step = S.queue.shift();
+      S.curPlaying = step;                  // remembered if a question cuts in
       await playStep(step);
+      const cutOff = S.stopFlag || (step._turn && step._turn !== S.curTurn);
+      if (!cutOff) S.curPlaying = null;     // finished normally
+      else break;
     }
     S.playing = false;
     setTalking(false);
@@ -963,6 +1152,11 @@
       const action = S.paused ? S.actx.suspend() : S.actx.resume();
       action.catch(() => {});
     }
+    const a = S.curAudioEl;
+    if (a && !a.ended) {
+      if (S.paused) a.pause();
+      else if (a.paused) { const p = a.play(); if (p) p.catch(() => {}); }
+    }
     setStatus(S.paused ? "المحاضرة متوقفة مؤقتًا · يمكنك كتابة سؤال أو تسجيله" : "", S.paused ? "paused" : "idle");
     setHeaderStatus(S.paused ? "⏸ المحاضرة متوقفة مؤقتًا" :
       S.lectureCompleted ? "✓ اكتملت المحاضرة" :
@@ -982,7 +1176,49 @@
       button.setAttribute("aria-pressed", String(S.paused));
       button.classList.toggle("is-paused", S.paused);
     }
+    updateAskLock();
   }
+
+  // ---------- questions open only once the lecture has started ----------
+  const ASK_LOCKED_MSG = "ابدأ المحاضرة أولًا، ثم اطرح سؤالك عن الدرس.";
+  const ASK_OPEN_MSG = "اسأل بالكتابة أو بالصوت.";
+  function updateAskLock() {
+    const panel = document.querySelector(".question-panel");
+    if (!panel) return;
+    const locked = !S.lectureStarted;
+    if (panel.dataset.lockState === String(locked)) return;
+    panel.dataset.lockState = String(locked);
+    panel.classList.toggle("ask-locked", locked);
+    document.querySelector(".chip-row")?.classList.toggle("ask-locked", locked);
+    const input = document.querySelector("#lesson-question textarea");
+    if (input) {
+      input.readOnly = locked;
+      input.placeholder = locked ? "تبدأ الأسئلة بعد بدء المحاضرة…" : "اكتب سؤالك هنا…";
+    }
+    const status = document.getElementById("tutori-ask-status");
+    if (status && (locked || status.dataset.kind === "locked")) {
+      status.textContent = locked ? ASK_LOCKED_MSG : ASK_OPEN_MSG;
+      status.dataset.kind = locked ? "locked" : "";
+    }
+  }
+  // Gradio mounts the side column after this script: keep the lock in sync
+  setInterval(updateAskLock, 800);
+  // Block every way of asking (send, Enter → send, record, suggestion chips,
+  // ask tiles) before the lecture starts. Capture phase: runs before Gradio.
+  document.addEventListener("click", event => {
+    if (S.lectureStarted) return;
+    const asking = event.target.closest?.(
+      "#send-btn, .chip-row button, #tutori-mic, [data-mic], .action-tile[data-ask]");
+    if (!asking) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const status = document.getElementById("tutori-ask-status");
+    if (status) {
+      status.textContent = ASK_LOCKED_MSG;
+      status.dataset.kind = "locked";
+      status.classList.remove("ask-nudge"); void status.offsetWidth; status.classList.add("ask-nudge");
+    }
+  }, true);
 
   window.tutoriTogglePause = () => setPaused(!S.paused);
   document.addEventListener("click", event => {
@@ -1073,6 +1309,15 @@
 
     if (p.turn && p.turn !== S.curTurn) {        // a new turn begins
       const isFirstTurn = !S.curTurn;
+      if (Number(p.lesson_total) > 0) {
+        // the published lecture itself (start / replay): nothing to resume
+        S.lectureTurn = p.turn;
+        S.lectureCompletionText = p.completion_text || "اكتملت المحاضرة ✓";
+        S.resume = null;
+      } else {
+        saveLectureForLater();                  // a question cuts into the lecture
+      }
+      S.curPlaying = null;
       S.lectureCompleted = false;
       S.lectureStarted = true;
       updateLectureButton();
@@ -1100,6 +1345,7 @@
         if ((s.audio || s.audio_url) && S.voiceOn) { // load audio without bloating the lesson payload
           loadStepAudio(s);
         }
+        s._turn = p.turn || S.curTurn;
         S.queue.push(s);
         S.enqueued = idx + 1;
       }
@@ -1109,6 +1355,8 @@
       S.serverDone = p.status === "done";
       if (p.status === "error") {
         setTimeout(() => setStatus("", "idle"), 6000);
+        // a failed question should not end the lecture either
+        if (S.resume && !S.playing && !S.queue.length) setTimeout(resumeLecture, 2500);
       } else if (!S.playing && !S.queue.length) {
         finishPlayback();
       }
@@ -1129,7 +1377,7 @@
   };
 
   window.tutoriStop = () => {
-    S.stopFlag = true; S.queue = [];
+    S.stopFlag = true; S.queue = []; S.resume = null;   // a full stop ends the lecture
     setTimeout(() => { S.stopFlag = false; }, 60);
   };
 
@@ -1250,6 +1498,16 @@
       `<button class="tb-btn tb-icon tb-tool" data-mode="${mode}" title="${title}" aria-label="${title}">${ICONS[mode]}</button>`;
     return `
       <div class="tb-title">${ICONS.board}<span class="talk-label">السبورة التفاعلية</span><span id="tutori-talking" class="talk-dot" title="المدرب يتحدث"></span></div>
+      <div class="speed-ctl">
+        <button type="button" class="tb-btn speed-toggle" aria-haspopup="true" aria-expanded="false" title="سرعة الشرح" aria-label="سرعة الشرح">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 18a8.5 8.5 0 1 1 15 0"/><path d="M12 13.5l4-4"/><circle cx="12" cy="14" r="1.2" fill="currentColor"/></svg>
+          <span class="speed-val">${S.rate}×</span>
+        </button>
+        <div class="speed-menu" role="group" aria-label="سرعة الشرح" hidden>
+          <div class="speed-menu-title">سرعة الشرح</div>
+          ${[0.75, 1, 1.25, 1.5].map(r => `<button type="button" data-rate="${r}" class="${r === S.rate ? "active" : ""}" aria-pressed="${r === S.rate}"><bdi dir="ltr">${r}×</bdi>${r === 1 ? " <span class=\"speed-note\">عادية</span>" : ""}</button>`).join("")}
+        </div>
+      </div>
       <div class="tb-spacer"></div>
       <div class="tb-group">
         <button class="tb-btn tb-icon" id="tb-undo" title="تراجع" aria-label="تراجع">${ICONS.undo}</button>
@@ -1316,8 +1574,8 @@
           <canvas id="cv-user"></canvas>
           <div class="board-status" id="tutori-status"></div>
         </div>
-        <div class="board-caption" id="tutori-caption"></div>
-      </div>`;
+      </div>
+      <div class="board-caption" id="tutori-caption"></div>`;
     S.wrap = host.querySelector("#tutori-wrap");
     S.agentCv = host.querySelector("#cv-agent");
     S.liveCv = host.querySelector("#cv-live");
@@ -1495,7 +1753,9 @@
       setTimeout(() => send.click(), 80);       // same path as typing + «إرسال»
     }
     function lectureLog() {
+      // Gradio nests a .message inside a .message: keep the innermost only
       return [...document.querySelectorAll("#tutori-chat .message")]
+        .filter(m => !m.querySelector(".message"))
         .map(m => ({ user: !!m.closest(".user, [data-testid='user']"), text: m.innerText.trim() }))
         .filter(m => m.text);
     }

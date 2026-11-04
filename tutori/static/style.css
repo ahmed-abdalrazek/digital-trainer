@@ -1518,3 +1518,292 @@ body {
 .ask-inline-mic-wrap .html-container { overflow: visible !important; padding: 0 !important; margin: 0 !important; height: auto !important; min-height: 0 !important; }
 .ask-inline-mic-wrap { z-index: 5 !important; width: 34px !important; }
 .ask-inline-mic { color: #46524f !important; background: #eef2f1 !important; }
+
+/* =====================================================================
+   LAYOUT FIT — the classroom fits one screen: a compact header row,
+   the board sized to the viewport with the narration card under it, and
+   a side column whose cards all show without zooming out.
+   ===================================================================== */
+/* header: one compact row (brand + course line side by side) */
+.demo-lecture-cta { margin: 0 4px 8px !important; padding: 2px 8px !important; gap: 14px !important; min-height: 0 !important; }
+#tutori-header { min-height: 0 !important; gap: 12px !important; }
+#tutori-header .head-left { display: flex; align-items: center; gap: 8px 22px; flex-wrap: wrap; }
+.tutori-brand .brand-mark { width: 36px !important; height: 36px !important; }
+.tutori-brand strong { font-size: 22px !important; }
+.tutori-brand small { font-size: 12px !important; }
+#tutori-header .tag { margin-top: 0 !important; font-size: 12.5px !important; }
+#tutori-header .live-student-tag, #tutori-live-status { padding: 8px 14px !important; }
+#demo-start-lecture-btn { min-height: 46px !important; }
+
+/* narration: its own card under the board (it used to sit inside the
+   board card and take the board's bottom edge) */
+.board-caption {
+  margin: 0 !important;
+  border: 0 !important; border-radius: 16px !important;
+  background: #ffffff !important; color: var(--cl-ink) !important;
+  box-shadow: 0 14px 34px #0000002e !important;
+}
+.board-caption.show { margin-top: 12px !important; padding: 12px 18px !important; }
+
+/* question card: tighter, no in-box mic any more */
+.question-panel { padding: 14px 16px 10px !important; gap: 8px !important; }
+.ask-title { font-size: 17px !important; }
+.question-panel #lesson-question textarea { min-height: 56px !important; padding-left: 12px !important; }
+.question-panel .ask-actions, .question-panel .ask-actions > *,
+.question-panel .ask-mic, .question-panel #send-btn, .question-panel button#send-btn {
+  height: 44px !important; min-height: 44px !important; max-height: 44px !important;
+}
+.ask-hint { font-size: 12px; }
+
+/* lecture log: compact header and empty state */
+.log-head { padding: 12px 16px !important; font-size: 16px !important; }
+.log-empty { padding: 8px 10px !important; }
+.log-empty svg { width: 32px; height: 32px; }
+
+/* action tiles: one short row (icon beside the label) */
+.action-tile {
+  min-height: 58px !important; grid-auto-flow: column; align-items: center;
+  justify-content: center; gap: 6px !important; padding: 8px 8px !important; font-size: 12px !important;
+}
+.action-tile svg { width: 20px; height: 20px; flex: none; }
+
+@media (min-width: 1181px) {
+  /* the board takes the screen height left after the header, leaving room
+     for the narration card under it */
+  .board-wrap { height: clamp(340px, calc(100vh - 300px), 720px) !important; }
+  .studio-row { gap: 18px !important; }
+  .side-col { gap: 12px !important; }
+}
+
+/* layout fit — tuning: board + narration card fit together; tiles keep
+   the icon above the label (beside it, labels wrapped to three lines) */
+@media (min-width: 1181px) { .board-wrap { height: clamp(340px, calc(100vh - 345px), 720px) !important; } }
+.action-tile { grid-auto-flow: row !important; min-height: 70px !important; gap: 4px !important; }
+
+/* =====================================================================
+   LAYOUT FIT 2 — measured at 1520×760 (a 1080p screen at 125% Windows
+   scaling): the page lost ~140px to Gradio padding and a three-line
+   header. Header is now one ~52px row; the side column fits the screen.
+   ===================================================================== */
+.gradio-container { padding: 0 !important; }
+.gradio-container > main, .gradio-container main.fillable { padding: 8px 14px 14px !important; }
+.demo-lecture-cta { margin: 0 4px -6px !important; padding: 0 6px !important; }
+#tutori-header { padding: 0 !important; min-height: 0 !important; }
+#tutori-header .head-left { gap: 0 !important; }
+.tutori-brand { gap: 10px !important; }
+.tutori-brand .brand-mark { width: 32px !important; height: 32px !important; }
+.tutori-brand .brand-mark svg { width: 26px; height: 26px; }
+.tutori-brand strong { font-size: 20px !important; line-height: 1.2 !important; }
+.tutori-brand small.tag { color: #a9c7bc !important; font-size: 12px !important; margin: 0 !important; }
+#demo-start-lecture-btn, #demo-start-lecture-btn button { min-height: 44px !important; height: 44px !important; }
+#replay-btn, #replay-btn button { min-height: 40px !important; }
+#tutori-header .live-student-tag, #tutori-live-status { padding: 7px 12px !important; }
+
+/* question card: title and subtitle on one line, one-line hint */
+.question-panel { padding: 12px 14px 8px !important; gap: 8px !important; }
+.ask-head { flex-direction: row !important; align-items: baseline !important; flex-wrap: wrap; gap: 4px 10px !important; }
+.ask-sub { font-size: 12px !important; }
+.question-panel #lesson-question textarea { min-height: 52px !important; }
+.ask-hint { min-height: 0; }
+.ask-status { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+@media (min-width: 1181px) {
+  .board-wrap { height: clamp(320px, calc(100vh - 300px), 720px) !important; }
+  /* the log takes the height left in the column (its own scroll inside) */
+  #tutori-chat { height: clamp(140px, calc(100vh - 520px), 420px) !important; }
+}
+@media (min-width: 1181px) { #tutori-chat { height: clamp(130px, calc(100vh - 565px), 420px) !important; } }
+
+/* side column: it is height-capped and scrolls inside itself — but Gradio
+   columns wrap, so the overflow (tiles, suggestions, settings) went into a
+   hidden second column instead of scrolling. Keep one column, and let the
+   cap follow the new compact header. */
+@media (min-width: 1181px) {
+  .studio-row .side-col { flex-wrap: nowrap !important; max-height: calc(100dvh - 92px) !important; }
+  .studio-row .side-col > * { flex-shrink: 0 !important; }
+}
+.tb-title, .tb-title .talk-label, .board-toolbar .tb-text { white-space: nowrap !important; }
+.board-toolbar { flex-wrap: nowrap; }
+@media (max-width: 1400px) { .board-toolbar .tb-icon { width: 34px !important; height: 34px !important; } .board-toolbar .tb-swatch { width: 24px !important; height: 24px !important; } .board-toolbar { gap: 6px !important; } }
+/* short screens (laptops ~650-700px tall): drop the secondary lines of the
+   question card so the log and the action tiles still show */
+@media (min-width: 1181px) and (max-height: 700px) {
+  .ask-sub, .ask-hint { display: none !important; }
+  .question-panel #lesson-question textarea { min-height: 44px !important; }
+  .question-panel { gap: 6px !important; padding: 10px 14px 10px !important; }
+}
+/* toolbar: never overflow (it cut off pen colours at ~1500px wide); allow
+   a second row as a last resort and use smaller buttons below 1650px */
+.board-toolbar { flex-wrap: wrap !important; row-gap: 6px !important; overflow: visible !important; }
+@media (max-width: 1650px) {
+  .board-toolbar { gap: 5px !important; padding: 8px 10px !important; }
+  .board-toolbar .tb-icon { width: 32px !important; height: 32px !important; }
+  .board-toolbar .tb-icon svg { width: 17px; height: 17px; }
+  .board-toolbar .tb-text { height: 32px !important; padding: 0 8px !important; font-size: 12px !important; }
+  .board-toolbar .tb-swatch { width: 22px !important; height: 22px !important; }
+  .tb-title { font-size: 14px !important; gap: 6px !important; }
+  .tb-sep { margin: 4px 0 !important; }
+}
+
+/* questions are locked until the lecture starts (board.js updateAskLock) */
+.question-panel.ask-locked #lesson-question textarea { background: #f2f4f3 !important; cursor: not-allowed !important; }
+.question-panel.ask-locked .ask-mic, .question-panel.ask-locked #send-btn,
+.chip-row.ask-locked button { opacity: .5 !important; cursor: not-allowed !important; }
+.ask-status[data-kind="locked"] { color: #b45309 !important; font-weight: 700 !important; }
+@media (min-width: 1181px) and (max-height: 700px) { .question-panel.ask-locked .ask-hint { display: flex !important; } }
+.ask-nudge { animation: ask-nudge .35s ease; }
+@keyframes ask-nudge { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+
+/* =====================================================================
+   SIDE TABS — «اسأل المدرب» (+ suggested questions) and «سجل المحاضرة»
+   ===================================================================== */
+.side-tabs { direction: rtl; background: transparent !important; border: 0 !important; padding: 0 !important; gap: 10px !important; }
+.side-tabs .tab-wrapper, .side-tabs .tab-container { background: transparent !important; border: 0 !important; height: auto !important; padding: 0 !important; }
+.side-tabs .tab-container {
+  display: flex !important; gap: 6px !important; padding: 4px !important;
+  background: #ffffff14 !important; border: 1px solid #ffffff22 !important; border-radius: 14px !important;
+}
+.side-tabs button[role="tab"] {
+  flex: 1 1 0 !important; justify-content: center !important;
+  height: 40px !important; padding: 0 12px !important; margin: 0 !important;
+  border: 0 !important; border-radius: 10px !important;
+  background: transparent !important; color: #d6e8e1 !important;
+  font: 800 14.5px/1 var(--cl-font) !important;
+}
+.side-tabs button[role="tab"]:hover { background: #ffffff14 !important; color: #fff !important; }
+.side-tabs button[role="tab"].selected, .side-tabs button[role="tab"][aria-selected="true"] {
+  background: #fff !important; color: var(--cl-ink) !important; box-shadow: 0 4px 12px #00000026 !important;
+}
+.side-tabs button[role="tab"].selected::after, .side-tabs button[role="tab"]::after { display: none !important; }
+.side-tabs .tabitem, .side-tabs [role="tabpanel"] {
+  background: transparent !important; border: 0 !important; padding: 0 !important; gap: 12px !important;
+}
+.side-tab > .column, .side-tab { gap: 12px !important; }
+.side-tabs .chip-head { margin-top: 4px !important; }
+
+@media (min-width: 1181px) {
+  /* in its own tab the log can use the column's full height */
+  .side-tabs #tutori-chat { height: clamp(220px, calc(100vh - 215px), 760px) !important; }
+}
+
+/* =====================================================================
+   SIDE TIDY — no column scrollbar, even spacing in the lecture log.
+   Measured: the side column overflowed its cap by 4px (→ a full-height
+   scrollbar); Gradio's chatbot reserves 34px on top for a "Clear" button
+   and gives each message 20px margins with a "100% - 60px" width cap.
+   ===================================================================== */
+@media (min-width: 1181px) {
+  /* with the tabs everything fits: the column no longer scrolls itself */
+  .studio-row .side-col { max-height: none !important; overflow: visible !important; padding-right: 0 !important; }
+}
+.side-tabs, .side-tab, .side-tab > .column, .log-card { width: 100% !important; }
+
+/* log: no Clear (trash) button, no empty band above the messages */
+#tutori-chat button[aria-label="Clear"], #tutori-chat .icon-button-wrapper { display: none !important; }
+#tutori-chat .wrapper { padding-top: 0 !important; }
+#tutori-chat .bubble-wrap { padding: 12px 0 4px !important; }
+#tutori-chat .message-wrap { margin: 0 !important; gap: 10px !important; }
+
+/* messages use the card's width with even 14px sides */
+#tutori-chat .message-row, #tutori-chat .message-row.bubble {
+  margin: 0 14px 10px !important;
+  max-width: none !important; width: auto !important;
+}
+#tutori-chat .message-row .role, #tutori-chat .message-row .flex-wrap { width: 100% !important; max-width: 100% !important; }
+#tutori-chat .message.bot, #tutori-chat .message.user, #tutori-chat .bot.message, #tutori-chat .user.message {
+  width: 100% !important; max-width: 100% !important;
+  padding: 10px 14px !important; margin: 0 !important;
+  border-radius: 14px !important; line-height: 1.85 !important;
+}
+#tutori-chat .message .message, #tutori-chat .message .prose { padding: 0 !important; margin: 0 !important; border: 0 !important; background: transparent !important; }
+
+/* the log still scrolls inside itself, with a thin, quiet scrollbar */
+#tutori-chat .bubble-wrap { scrollbar-width: thin; scrollbar-color: #c9d3d0 transparent; }
+#tutori-chat .bubble-wrap::-webkit-scrollbar { width: 6px; }
+#tutori-chat .bubble-wrap::-webkit-scrollbar-thumb { background: #c9d3d0; border-radius: 6px; }
+#tutori-chat .bubble-wrap::-webkit-scrollbar-button { display: none; height: 0; }
+
+/* log header: same side padding as the messages, a lighter divider */
+.log-head { padding: 12px 16px 10px !important; border-bottom: 1px solid #edf1ef !important; }
+
+/* the Gradio footer was hidden with visibility (it kept its ~35px) and the
+   bottom padding pushed the page past the screen → a page scrollbar */
+footer { display: none !important; }
+.gradio-container > main, .gradio-container main.fillable { padding-bottom: 6px !important; }
+
+/* narration card: one sentence at a time (board.js), so a smaller, steady
+   two-line box instead of the whole paragraph in a big font */
+.board-caption, .board-caption.show { font-size: 15px !important; line-height: 1.75 !important; font-weight: 500 !important; }
+.board-caption.show { padding: 10px 18px !important; min-height: calc(15px * 1.75 * 2 + 20px); display: flex !important; align-items: center; }
+
+/* narration card: right-to-left Arabic, starting from the right (it lost
+   the RTL it inherited once it moved out of the board card) */
+.board-caption, .board-caption.show { direction: rtl !important; text-align: right !important; justify-content: flex-start !important; unicode-bidi: plaintext; }
+
+/* =====================================================================
+   SPEED CONTROL — the learner sets how fast the tutor explains
+   (voice, drawing and caption move together).
+   ===================================================================== */
+#tutori-header .head-right { display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; justify-content: flex-end; }
+#tutori-header .head-right .live-student-tag { white-space: nowrap; }
+.speed-ctl {
+  display: inline-flex; align-items: center; gap: 3px; direction: rtl;
+  padding: 3px; border-radius: 999px;
+  background: #ffffff; border: 1px solid #dfe7e4; box-shadow: 0 2px 8px #0b3b3214;
+  font-family: var(--cl-font, inherit);
+}
+.speed-ctl .speed-label { padding: 0 10px 0 6px; font-size: 12.5px; font-weight: 800; color: #5b6f69; white-space: nowrap; }
+.speed-ctl button {
+  min-width: 46px; height: 28px; padding: 0 9px; border: 0; border-radius: 999px;
+  background: transparent; color: #33463f; cursor: pointer;
+  font: 800 12.5px/1 var(--cl-font, inherit); direction: ltr;
+  transition: background .15s, color .15s;
+}
+.speed-ctl button:hover { background: #eef4f2; }
+.speed-ctl button.active { background: var(--cl-ink, #0f5b4c); color: #fff; box-shadow: 0 2px 6px #0b3b3233; }
+.speed-ctl button:focus-visible { outline: 2px solid var(--cl-ink, #0f5b4c); outline-offset: 1px; }
+@media (max-width: 640px) { .speed-ctl .speed-label { display: none; } .speed-ctl button { min-width: 40px; } }
+/* on the dark classroom header: match the status chip */
+#tutori-header .speed-ctl { background: #1d4536; border-color: #2d5a49; box-shadow: none; }
+#tutori-header .speed-ctl .speed-label { color: #a9c7bc; }
+#tutori-header .speed-ctl button { color: #e7f3ee; }
+#tutori-header .speed-ctl button:hover { background: #ffffff1a; }
+#tutori-header .speed-ctl button.active { background: #fff; color: var(--cl-ink, #0f3b30); box-shadow: 0 2px 6px #00000033; }
+/* speed control lives in the board toolbar, next to the board title */
+.board-toolbar .speed-ctl { margin-inline-start: 10px; flex: 0 0 auto; background: #f3f6f5; border-color: #e1e8e5; box-shadow: none; }
+.board-toolbar .speed-ctl button { height: 30px; min-width: 42px; }
+@media (max-width: 1650px) {
+  .board-toolbar .speed-ctl .speed-label { padding: 0 6px 0 4px; font-size: 12px; }
+  .board-toolbar .speed-ctl button { height: 28px; min-width: 38px; padding: 0 7px; font-size: 12px; }
+}
+/* compact form: one button showing the speed, a small menu with the choices */
+.board-toolbar .speed-ctl { position: relative; padding: 0; gap: 0; background: transparent !important; border: 0 !important; box-shadow: none !important; margin-inline-start: 8px; }
+.board-toolbar .speed-toggle {
+  display: inline-flex !important; align-items: center; gap: 5px;
+  height: 34px !important; padding: 0 10px !important; min-width: 0 !important;
+  border-radius: 10px !important; color: var(--cl-ink, #0f3b30) !important;
+  font: 800 13px/1 var(--cl-font, inherit) !important; direction: ltr;
+}
+.board-toolbar .speed-toggle[aria-expanded="true"] { background: #e8f1ee !important; }
+.speed-menu {
+  position: absolute; top: calc(100% + 6px); inset-inline-start: 0; z-index: 60;
+  display: flex; flex-direction: column; gap: 2px; min-width: 128px; padding: 6px;
+  background: #fff; border: 1px solid #e1e8e5; border-radius: 12px;
+  box-shadow: 0 12px 28px #0b3b3226; direction: rtl;
+}
+.speed-menu[hidden] { display: none; }
+.speed-menu-title { padding: 4px 8px 6px; font: 800 12px/1.2 var(--cl-font, inherit); color: #6b7f78; }
+.board-toolbar .speed-menu button {
+  width: 100%; height: 32px; min-width: 0; padding: 0 10px; text-align: right; direction: rtl;
+  border-radius: 8px; color: #33463f; background: transparent; font-size: 13px;
+}
+.board-toolbar .speed-menu button:hover { background: #eef4f2; }
+.board-toolbar .speed-menu button.active { background: var(--cl-ink, #0f3b30); color: #fff; }
+@media (max-width: 1650px) { .board-toolbar .speed-toggle { height: 32px !important; padding: 0 8px !important; } }
+.board-toolbar { position: relative; z-index: 40; }
+.speed-menu .speed-note { opacity: .7; font-weight: 700; margin-inline-start: 6px; }
+/* fixed width so the toolbar doesn't reflow when the speed changes */
+.board-toolbar .speed-ctl { margin-inline-start: 2px !important; }
+.board-toolbar .speed-toggle { width: 60px !important; padding: 0 5px !important; gap: 3px !important; justify-content: center !important; font-size: 12px !important; }
+.board-toolbar .speed-menu button.active, .board-toolbar .speed-menu button.active * { color: #fff !important; }
+.board-toolbar .speed-menu button.active { background: var(--cl-ink, #0f3b30) !important; }

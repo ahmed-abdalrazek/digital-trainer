@@ -87,7 +87,8 @@ def _demo_lesson(topic):
 
 
 def run_turn(audio_path, typed_text, board_snapshot, history, profile,
-             notes, board_now, pace, lesson_minutes, web_on, voice_on):
+             notes, board_now, pace, lesson_minutes, web_on, voice_on,
+             lesson_scope=None, lesson_topic=None):
     if REPLAY:
         files = REPLAY.split(",")
         path = files[min(_replay_turn["i"], len(files) - 1)]

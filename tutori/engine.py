@@ -2080,7 +2080,8 @@ def known_quick_fallback(question):
 
 
 def _build_messages(question, history, profile, pace, web_context, agent_plan,
-                    board_observation, duration_guidance, notes="", board_now=None):
+                    board_observation, duration_guidance, notes="", board_now=None,
+                    lesson_scope=None):
     today = datetime.date.today().isoformat()
     web_block = (
         "\n\nWEB CONTEXT (fresh source-of-truth; do not contradict it):\n" + web_context
@@ -2101,6 +2102,14 @@ def _build_messages(question, history, profile, pace, web_context, agent_plan,
         notes_block=notes_block,
         web_block=web_block,
     )
+    if lesson_scope:
+        system += (
+            "\n\nLESSON SCOPE (strict): the learner is inside this lecture and may only "
+            "ask about it. Answer questions about its content, clarify, simplify, repeat or "
+            "give examples of it. If the question is about anything else, do not teach it: "
+            "reply with ONE short step that politely says it is outside today's lesson and "
+            "invites a question about the lesson, with an empty board.\n" + lesson_scope[:1500]
+        )
     msgs = [{"role": "system", "content": system}]
     for m in (history or [])[-12:]:
         msgs.append({"role": m["role"], "content": str(m["content"])[:900]})
@@ -2167,9 +2176,60 @@ def _apply_controls(active_ops, controls):
     return active
 
 
+_SCOPE_POOL = ThreadPoolExecutor(max_workers=4)   # parallel topic checks
+_REFUSAL_AUDIO = {}
+
+
+def _refusal_audio(say):
+    """The off-topic reply is the same sentence every time: narrate it once
+    per server run instead of on every refused question (~5s saved)."""
+    if say not in _REFUSAL_AUDIO:
+        audio_b64, dur = synthesize(say)
+        if not audio_b64:
+            return None, None                 # don't cache a failure
+        _REFUSAL_AUDIO[say] = (audio_b64, dur)
+    return _REFUSAL_AUDIO[say]
+OFF_TOPIC_REPLY = ("سؤالك خارج موضوع درسنا اليوم. أنا هنا لأشرح {topic}، "
+                   "فاسألني عن أي جزء منه وسأشرحه لك خطوة بخطوة.")
+
+
+def question_in_scope(question, lesson_scope):
+    """Fast yes/no check: is the learner's question about this lesson?
+
+    Lenient on purpose: clarifications ("I didn't get it", "repeat that"),
+    examples, and the basics needed to follow the lesson all count. Fails
+    open (True) if the check itself errors, so a network hiccup never blocks
+    a real lesson question; the lesson prompt also carries the scope rule."""
+    if not lesson_scope or not str(question or "").strip():
+        return True
+    try:
+        raw = openai_chat(
+            [{"role": "system", "content": (
+                "You decide whether a student's question belongs to the current lesson. "
+                "Answer related=true for questions about the lesson's topics, requests to "
+                "repeat, clarify, simplify or give an example, questions about something the "
+                "teacher just said, and basics needed to understand the lesson. Answer "
+                "related=false for anything else (other subjects, general chat, personal "
+                "requests, other programming topics not in the lesson). Reply with JSON only: "
+                '{"related": true} or {"related": false}.')},
+             {"role": "user", "content": f"LESSON:\n{lesson_scope[:1500]}\n\nQUESTION:\n{question[:500]}"}],
+            model=MODEL_ID, max_tokens=60, temperature=0, json_mode=True,
+            reasoning="none", timeout=20,
+        )
+        return bool(json.loads(raw).get("related", True))
+    except Exception as exc:
+        print(f"[tutori] scope check failed, allowing the question: {exc!r}", flush=True)
+        return True
+
+
 def run_turn(audio_path, typed_text, board_snapshot, history, profile,
-             notes, board_now, pace, lesson_minutes, web_on, voice_on):
-    """One full agent turn. Yields event dicts (see module docstring)."""
+             notes, board_now, pace, lesson_minutes, web_on, voice_on,
+             lesson_scope=None, lesson_topic=None):
+    """One full agent turn. Yields event dicts (see module docstring).
+
+    `lesson_scope` (title + sections of the running lecture) restricts the
+    turn to that lesson: an off-topic question gets a short, polite refusal
+    instead of a new lesson."""
     t0 = time.time()
     try:
         question = (typed_text or "").strip()
@@ -2184,6 +2244,32 @@ def run_turn(audio_path, typed_text, board_snapshot, history, profile,
             return
         if not question:
             question = "Take a look at what I drew on the board and help me with it."
+
+        # The topic check runs IN PARALLEL with writing the answer (it took
+        # ~3s, which used to sit in front of every answer). Its verdict is
+        # read just before the first step is shown; an off-topic question
+        # then gets the short refusal and the started answer is dropped.
+        scope_check = (_SCOPE_POOL.submit(question_in_scope, question, lesson_scope)
+                       if lesson_scope and (typed_text or audio_path) else None)
+
+        def off_topic():
+            if scope_check is None:
+                return False
+            try:
+                return not scope_check.result(timeout=25)
+            except Exception:
+                return False                      # fail open
+
+        def refusal():
+            print(f"[tutori] off-topic question refused at {time.time() - t0:.1f}s", flush=True)
+            say = OFF_TOPIC_REPLY.format(topic=lesson_topic or "موضوع المحاضرة")
+            audio_b64, dur = (_refusal_audio(say) if voice_on else (None, None))
+            yield {"type": "step", "step": {
+                "say": say, "board": [], "audio": audio_b64,
+                "dur": dur or max(2.2, len(say.split()) / 2.25),
+                "voice_missing": bool(voice_on and not audio_b64)}}
+            yield {"type": "final", "text": say, "error": None, "question": question,
+                   "off_topic": True, "elapsed": round(time.time() - t0, 1)}
 
         board_observation = ""
         if board_snapshot:
@@ -2221,6 +2307,7 @@ def run_turn(audio_path, typed_text, board_snapshot, history, profile,
         msgs = _build_messages(
             question, history, profile, pace, web_context, plan,
             board_observation, duration_guidance, notes=notes or "", board_now=board_now,
+            lesson_scope=lesson_scope,
         )
         max_tokens = min(18000, 3800 + minutes * 1100)
         # "none" measured: first token 1.5s vs 7.5s with "low" on a 5-minute
@@ -2330,6 +2417,11 @@ def run_turn(audio_path, typed_text, board_snapshot, history, profile,
                     if not step:
                         continue
                     if n_steps == 0:
+                        if off_topic():
+                            if pool:
+                                pool.shutdown(wait=False)
+                            yield from refusal()
+                            return
                         print(f"[tutori] first panel ready in {time.time() - t0:.1f}s "
                               f"via {teacher_name} (streamed)", flush=True)
                     said.append(step["say"])
@@ -2413,6 +2505,11 @@ def run_turn(audio_path, typed_text, board_snapshot, history, profile,
             if not step:
                 continue
             if n_steps == 0:
+                if off_topic():
+                    if pool:
+                        pool.shutdown(wait=False)
+                    yield from refusal()
+                    return
                 print(f"[tutori] first panel ready in {time.time() - t0:.1f}s "
                       f"via {teacher_name}", flush=True)
             said.append(step["say"])

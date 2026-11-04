@@ -159,5 +159,50 @@ class StreamedLessonTests(unittest.TestCase):
         self.assertEqual(len([e for e in events if e["type"] == "step"]), 4)
 
 
+class LessonScopeTests(unittest.TestCase):
+    """Inside a lecture, the tutor only answers questions about that lecture."""
+
+    SCOPE = "عنوان المحاضرة: من فهم المشكلة إلى بناء الخوارزمية\n- ٥. تعريف الخوارزمية: ..."
+
+    def turn(self, question, gate_reply):
+        def fake_chat(messages, **kwargs):
+            if "decide whether a student's question" in messages[0]["content"]:
+                if isinstance(gate_reply, Exception):
+                    raise gate_reply
+                return gate_reply
+            raise AssertionError("whole-lesson fallback used")
+
+        def fake_stream(*args, **kwargs):
+            yield lesson_json()
+
+        with patch.object(engine, "openai_chat", side_effect=fake_chat),              patch.object(engine, "openai_chat_stream", side_effect=fake_stream) as stream,              patch.object(engine, "coach_update", return_value=({}, [])):
+            events = list(engine.run_turn(
+                None, question, "", [{"role": "user", "content": "lecture"}], {}, "", [],
+                3, 3, False, False, lesson_scope=self.SCOPE, lesson_topic="الخوارزميات"))
+        return events, stream
+
+    def test_off_topic_question_gets_a_short_refusal_not_a_lesson(self):
+        events, _stream = self.turn("ما هي عاصمة فرنسا؟", '{"related": false}')
+        # the answer may start in parallel with the topic check, but none of
+        # its steps may reach the learner: only the refusal is shown
+        steps = [e["step"] for e in events if e["type"] == "step"]
+        self.assertEqual(len(steps), 1)
+        self.assertIn("خارج موضوع درسنا", steps[0]["say"])
+        self.assertIn("الخوارزميات", steps[0]["say"])
+        self.assertEqual(steps[0]["board"], [])
+        self.assertTrue(events[-1].get("off_topic"))
+
+    def test_lesson_question_is_answered(self):
+        events, stream = self.turn("يعني إيه خوارزمية؟", '{"related": true}')
+        stream.assert_called_once()
+        self.assertEqual(len([e for e in events if e["type"] == "step"]), 4)
+        prompt = stream.call_args[0][0][0]["content"]
+        self.assertIn("LESSON SCOPE", prompt)
+
+    def test_scope_check_failure_lets_the_question_through(self):
+        events, stream = self.turn("اشرح خريطة التدفق", RuntimeError("network"))
+        stream.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()
