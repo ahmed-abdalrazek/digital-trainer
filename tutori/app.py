@@ -954,8 +954,8 @@ if __name__ == "__main__":
         if not version:
             return JSONResponse({"error": "لا توجد نسخة منشورة."}, status_code=404)
         section = next((item for item in sections if int(item["position"]) == position), None)
-        audio_path = Path(section["audio_path"]) if section and section.get("audio_path") else None
-        if not audio_path or not audio_path.is_file():
+        audio_path = lesson_store.resolve_audio_path(section.get("audio_path")) if section else None
+        if not audio_path:
             return JSONResponse({"error": "ملف الصوت لهذا الجزء غير موجود."}, status_code=404)
         media_type = "audio/wav" if audio_path.suffix.lower() == ".wav" else "audio/mpeg"
         return FileResponse(audio_path, media_type=media_type,
@@ -997,8 +997,7 @@ if __name__ == "__main__":
                 raise WorkflowError("انشر المحاضرة أولًا ثم أنشئ ملفاتها الصوتية.")
             missing = [section for section in sections
                        if section.get("audio_provider") != "elevenlabs"
-                       or not section.get("audio_path")
-                       or not Path(section["audio_path"]).is_file()]
+                       or not lesson_store.resolve_audio_path(section.get("audio_path"))]
             if not missing:
                 return {"ready": True, "message": "الصوت الذكي جاهز بالفعل."}
             audio = {}

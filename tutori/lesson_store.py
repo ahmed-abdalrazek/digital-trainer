@@ -5,12 +5,29 @@ import math
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 from preparation_workflow import DURATION_MINUTES, LESSON_ID, LESSON_TITLE, SECTIONS
 
 
 DB_PATH = Path(__file__).parent / "data" / "lesson_preparation.sqlite3"
+AUDIO_DIR = Path(__file__).parent / "data" / "audio"
+
+
+def resolve_audio_path(stored):
+    """Return the lesson audio file for a stored path, or None if it is missing.
+
+    Paths are saved as absolute paths of the machine that generated them
+    (e.g. C:\\...\\data\\audio\\x.mp3), so a database copied to another host
+    falls back to the same file name inside this install's data/audio.
+    """
+    if not stored:
+        return None
+    path = Path(stored)
+    if path.is_file():
+        return path
+    fallback = AUDIO_DIR / PureWindowsPath(stored).name
+    return fallback if fallback.is_file() else None
 SUPPORTED_OPS = {"clear", "title", "text", "box", "arrow", "polygon"}
 
 
@@ -308,9 +325,8 @@ def get_published_steps(path=DB_PATH):
     steps = []
     for section in sections:
         say = section["explanation"]
-        audio_path = section.get("audio_path")
         audio_url = None
-        if audio_path and Path(audio_path).is_file():
+        if resolve_audio_path(section.get("audio_path")):
             # Bust any browser cache after re-synthesizing a lesson at a new pace.
             audio_url = f"/api/lesson-preparation/audio/{int(section['position'])}?v={version}&pace=088"
         steps.append({"say": say, "board": json.loads(section["board_ops"]),
