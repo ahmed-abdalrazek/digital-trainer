@@ -1,0 +1,14 @@
+.git
+.claude
+graphify-out
+docs
+**/__pycache__
+**/*.py[cod]
+**/.venv
+**/.env
+**/.env.*
+!**/.env.example
+tutori/data
+tutori/traces
+tutori/*.mp4
+tutori/*.log

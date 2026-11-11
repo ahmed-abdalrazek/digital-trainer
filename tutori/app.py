@@ -927,7 +927,7 @@ if __name__ == "__main__":
     # Open Graph tags, and many link unfurlers choose the first one.
     web = FastAPI(title="Tutori")
     web.add_middleware(
-        CORSMiddleware, allow_origin_regex=r"https?://(al-aflaj\.onrender\.com|[a-zA-Z0-9-]+\.test|localhost|127\.0\.0\.1)(:\d+)?",
+        CORSMiddleware, allow_origin_regex=r"https?://(al-aflaj\.onrender\.com|[a-zA-Z0-9-]+\.up\.railway\.app|[a-zA-Z0-9-]+\.test|localhost|127\.0\.0\.1)(:\d+)?",
         allow_methods=["GET", "POST", "OPTIONS"], allow_headers=["Content-Type"],
     )
 
