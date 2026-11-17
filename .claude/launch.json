@@ -2,11 +2,25 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "demo",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "const h=require('http'),f=require('fs'),p=require('path'),r=process.cwd(),t={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.json':'application/json','.mp3':'audio/mpeg','.mp4':'video/mp4','.woff2':'font/woff2'};h.createServer((q,s)=>{let u=decodeURIComponent(q.url.split('?')[0]);if(u.endsWith('/'))u+='index.html';const fp=p.join(r,u);if(!fp.startsWith(r))return s.writeHead(403).end();f.readFile(fp,(e,b)=>{if(e)return s.writeHead(404).end('not found');s.writeHead(200,{'Content-Type':t[p.extname(fp)]||'application/octet-stream','Cache-Control':'no-store'});s.end(b)})}).listen(8765,'127.0.0.1')"
+      ],
+      "port": 8765
+    },
+    {
       "name": "tutori",
       "runtimeExecutable": "C:/laragon/www/digital-trainer/tutori/.venv/Scripts/python.exe",
-      "runtimeArgs": ["C:/laragon/www/digital-trainer/tutori/app.py"],
+      "runtimeArgs": [
+        "C:/laragon/www/digital-trainer/tutori/app.py"
+      ],
       "cwd": "C:/laragon/www/digital-trainer/tutori",
-      "env": { "GRADIO_SERVER_NAME": "127.0.0.1", "PYTHONIOENCODING": "utf-8" },
+      "env": {
+        "GRADIO_SERVER_NAME": "127.0.0.1",
+        "PYTHONIOENCODING": "utf-8"
+      },
       "port": 7860
     }
   ]

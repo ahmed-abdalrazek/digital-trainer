@@ -1,6 +1,6 @@
 // Quality review workspace for the demo. All records are fictional and session-only.
 (() => {
-  const role = 'إدارة الجودة التدريبية';
+  const role = 'الإدارة العامة لجودة التدريب';
   const selector = document.getElementById('role-switcher');
   const root = document.getElementById('app');
   const baseRender = render;
@@ -20,8 +20,8 @@
     { id:'Q-101', title:'نقص مرفقات درس إدارة كلمات المرور', college:'الكلية التقنية بالأفلاج', department:'تقنية الحاسب', course:'مبادئ الأمن السيبراني', kind:'محتوى', owner:'مالك المقرر', stage:0, due:'1448/03/24', detail:'الدرس منشور في سجل العرض مع مرفق توضيحي ناقص؛ الملاحظة لا توقف النشر ولا تعدل المحتوى.' }
   ];
   const audit = [
-    ['09:10','هدى الحربي','متابعة ملاحظة','Q-102 · مهارات الاتصال'],
-    ['أمس 14:35','هدى الحربي','رفع توصية','Q-103 · أساسيات البرمجة'],
+    ['09:10','هاني الحربي','متابعة ملاحظة','Q-102 · مهارات الاتصال'],
+    ['أمس 14:35','هاني الحربي','رفع توصية','Q-103 · أساسيات البرمجة'],
     ['أمس 11:20','منسق الجودة','تسجيل ملاحظة','Q-104 · الشبكات 101'],
     ['الأحد 10:05','النظام التجريبي','إنشاء سجل مراجعة','Q-101 · الأمن السيبراني']
   ];
@@ -33,9 +33,9 @@
   ];
   const contentRows = [
     ['الشبكات 101','نموذج OSI','الكلية التقنية بالخرج','مطابق','فهد القحطاني'],
-    ['أساسيات البرمجة','المتغيرات وأنواع البيانات','الكلية التقنية بالأفلاج','يحتاج مراجعة','نورة السبيعي'],
+    ['أساسيات البرمجة','المتغيرات وأنواع البيانات','الكلية التقنية بالأفلاج','يحتاج مراجعة','نايف السبيعي'],
     ['مبادئ الأمن السيبراني','إدارة كلمات المرور','الكلية التقنية بالأفلاج','مرفق ناقص','حسن الغامدي'],
-    ['مهارات الاتصال','التواصل المهني','وادي الدواسر','مطابق','مها القحطاني']
+    ['مهارات الاتصال','التواصل المهني','وادي الدواسر','مطابق','مازن القحطاني']
   ];
   const resultsRows = [
     ['أساسيات البرمجة','الأفلاج · تقنية الحاسب','68%','18%','14%','أولوية مراجعة'],
@@ -78,11 +78,15 @@
     const nav = document.getElementById('main-nav');
     nav.innerHTML = `<p class="nav-label">الجودة والرقابة التدريبية</p>${menu.map(([p,i,t])=>`<button class="nav-item" data-page="${p}">${i} <span>${t}</span></button>`).join('')}`;
     document.querySelector('.brand small').textContent = 'مراجعة الجودة';
+    const [name, initial] = ({'الإدارة العامة لجودة التدريب':['م. أسامه الأزهري','أ'],'إدارة الجودة بالمنطقة':['أ. هشام المطيري','ه']})[selector.value] || ['', ''];
+    document.querySelector('#profile-btn .avatar').textContent = initial;
+    document.querySelector('#profile-btn strong').textContent = name;
+    document.getElementById('active-role-label').textContent = selector.value;
     document.querySelector('.sidebar-foot').innerHTML = '<span class="pulse"></span> صلاحيات رقابية · بيانات تجريبية';
     document.querySelectorAll('.nav-item').forEach(item => item.classList.toggle('active', item.dataset.page === state.page));
   }
   function renderQuality() {
-    if (selector.value !== role) { if (String(state.page).startsWith('quality-')) state.page='dashboard'; baseRender(); return; }
+    if (!QUALITY_ROLES.includes(selector.value)) { if (String(state.page).startsWith('quality-')) state.page='dashboard'; baseRender(); return; }
     setQualityNav();
     if (!menu.some(([p])=>p===state.page)) state.page='dashboard';
     root.innerHTML = `<div class="quality-workspace">${pageFor(state.page)}</div>`;
@@ -101,19 +105,19 @@
     document.getElementById('quality-stage-filter').addEventListener('change', apply);
   }
   render = renderQuality;
-  selector.addEventListener('change', () => { if (selector.value===role) { state.page='dashboard'; renderQuality(); } });
+  selector.addEventListener('change', () => { if (QUALITY_ROLES.includes(selector.value)) { state.page='dashboard'; renderQuality(); } });
   document.addEventListener('click', event => {
-    const button=event.target.closest('[data-quality]'); if(!button || selector.value!==role) return;
+    const button=event.target.closest('[data-quality]'); if(!button || !QUALITY_ROLES.includes(selector.value)) return;
     const action=button.dataset.quality;
     if(action==='new') { state.page='quality-notes'; renderQuality(); const form=document.getElementById('quality-new-form'); form?.scrollIntoView({behavior:'smooth',block:'center'}); if(button.dataset.kind) form.elements.kind.value=button.dataset.kind; if(button.dataset.context) form.elements.title.value=`مراجعة: ${button.dataset.context}`; form?.elements.title.focus(); }
     else if(action==='cancel-new') { document.getElementById('quality-new-form')?.reset(); }
-    else if(action==='advance') { const item=cases.find(x=>x.id===button.dataset.id); if(item && item.stage<stages.length-1) { item.stage++; audit.unshift(['الآن','هدى الحربي',`نقل إلى «${stages[item.stage]}»`,`${item.id} · ${item.course}`]); renderQuality(); toast(`تم تسجيل «${stages[item.stage]}» في سجل العرض التجريبي.`,true); } }
+    else if(action==='advance') { const item=cases.find(x=>x.id===button.dataset.id); if(item && item.stage<stages.length-1) { item.stage++; audit.unshift(['الآن','هاني الحربي',`نقل إلى «${stages[item.stage]}»`,`${item.id} · ${item.course}`]); renderQuality(); toast(`تم تسجيل «${stages[item.stage]}» في سجل العرض التجريبي.`,true); } }
   });
   document.addEventListener('submit', event => {
-    if(event.target.id!=='quality-new-form' || selector.value!==role) return;
+    if(event.target.id!=='quality-new-form' || !QUALITY_ROLES.includes(selector.value)) return;
     event.preventDefault(); const data=new FormData(event.target); const due=data.get('due') ? new Date(data.get('due')).toLocaleDateString('ar-SA') : 'غير محدد';
     const item={id:`Q-${105+cases.length}`,title:String(data.get('title')).trim(),college:String(data.get('scope')).trim(),department:'نطاق المراجعة',course:'—',kind:String(data.get('kind')),owner:String(data.get('owner')||'الجهة المختصة'),stage:0,due,detail:String(data.get('detail')).trim()};
-    cases.unshift(item); audit.unshift(['الآن','هدى الحربي','تسجيل ملاحظة جودة',`${item.id} · ${item.title}`]); event.target.reset(); renderQuality(); toast('أضيفت الملاحظة إلى جلسة العرض فقط.',true);
+    cases.unshift(item); audit.unshift(['الآن','هاني الحربي','تسجيل ملاحظة جودة',`${item.id} · ${item.title}`]); event.target.reset(); renderQuality(); toast('أضيفت الملاحظة إلى جلسة العرض فقط.',true);
   });
   renderQuality();
 })();
